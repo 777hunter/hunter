@@ -1,0 +1,2 @@
+anthropic>=0.49
+pypdf>=4.0    # PDF 문서를 읽을 때만 필요 (txt/md만 쓰면 없어도 됨)
