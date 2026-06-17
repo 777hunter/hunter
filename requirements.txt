@@ -1,2 +1,3 @@
 anthropic>=0.49
-pypdf>=4.0    # PDF 문서를 읽을 때만 필요 (txt/md만 쓰면 없어도 됨)
+requests>=2.31   # Confluence(vks) API 호출용 (vks_timeline.py)
+pypdf>=4.0       # PDF 문서를 읽을 때만 필요 (vks.py, txt/md만 쓰면 없어도 됨)
