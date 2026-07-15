@@ -1,0 +1,15 @@
+# 비밀 정보 (토큰/키) — 절대 커밋하지 마세요
+.env
+kakao_token.json
+
+# 생성물
+output/
+*.png
+# README 미리보기 이미지는 커밋
+!docs/preview.png
+
+# 파이썬
+__pycache__/
+*.pyc
+.venv/
+venv/

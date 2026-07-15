@@ -1,0 +1,34 @@
+name: 매일 뉴스 카드 카카오 송출
+
+# 매일 자동으로 뉴스 카드를 만들어 카카오톡으로 보냅니다.
+on:
+  schedule:
+    # GitHub Actions cron 은 UTC 기준입니다.
+    # 아래는 매일 22:00 UTC = 한국시간(KST) 다음날 오전 7시에 실행됩니다.
+    - cron: "0 22 * * *"
+  workflow_dispatch: {}   # 저장소 Actions 탭에서 수동 실행도 가능
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 뉴스 카드 생성 & 카카오 전송
+        env:
+          # 저장소 Settings > Secrets and variables > Actions 에 등록한 값 사용
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
+          KAKAO_ACCESS_TOKEN: ${{ secrets.KAKAO_ACCESS_TOKEN }}
+          KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+          NEWS_RSS_URL: ${{ secrets.NEWS_RSS_URL }}
+          NEWS_LIMIT: "5"
+        run: python main.py --template text
