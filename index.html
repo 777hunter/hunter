@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#000000" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="무음카메라" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="favicon.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <title>무음카메라</title>
   <style>
     :root {
@@ -178,7 +185,10 @@
 
       <div id="topbar">
         <div class="title">무음카메라 <span class="silent-badge">SILENT</span></div>
-        <button class="icon-btn" id="galleryBtn" title="갤러리">▦</button>
+        <div style="display:flex; gap:8px;">
+          <button class="icon-btn" id="installBtn" title="앱 설치" style="display:none; width:auto; padding:0 14px; border-radius:21px; font-size:13px; gap:5px;">⤓ 설치</button>
+          <button class="icon-btn" id="galleryBtn" title="갤러리">▦</button>
+        </div>
       </div>
 
       <div class="toggle-row">
@@ -378,6 +388,37 @@
       if (document.hidden) stopCamera();
       else if (status.style.display === 'none') startCamera();
     });
+
+    // --- PWA: 설치 & 서비스워커 ---
+    const installBtn = document.getElementById('installBtn');
+    let deferredPrompt = null;
+
+    // 안드로이드/데스크톱 크롬: 설치 배너를 버튼으로 대체
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBtn.style.display = 'flex';
+    });
+    installBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      if (outcome === 'accepted') installBtn.style.display = 'none';
+    });
+    window.addEventListener('appinstalled', () => { installBtn.style.display = 'none'; });
+
+    // 이미 설치되어 실행 중이면 버튼 숨김
+    if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+      installBtn.style.display = 'none';
+    }
+
+    // 서비스워커 등록 (오프라인 실행 + 설치 요건)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
   </script>
 </body>
 </html>
