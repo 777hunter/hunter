@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="무음카메라" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="favicon.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <title>무음카메라</title>
+  <style>
+    :root {
+      --accent: #ffd54a;
+      --bg: #000;
+      --panel: rgba(20, 20, 20, 0.85);
+      --text: #fff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+    /* 카메라 화면 */
+    #stage { position: relative; flex: 1; overflow: hidden; background: #000; }
+    #video {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    #video.mirror { transform: scaleX(-1); }
+
+    /* 캡처 플래시 효과 */
+    #flash {
+      position: absolute; inset: 0;
+      background: #fff;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.05s ease-out;
+    }
+    #flash.fire { opacity: 0.9; transition: none; }
+
+    /* 상단 바 */
+    #topbar {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.55), transparent);
+      z-index: 5;
+    }
+    #topbar .title {
+      font-size: 15px; font-weight: 600; letter-spacing: 0.5px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #topbar .silent-badge {
+      font-size: 11px; font-weight: 600;
+      background: var(--accent); color: #000;
+      padding: 2px 8px; border-radius: 20px;
+    }
+    .icon-btn {
+      width: 42px; height: 42px; border-radius: 50%;
+      border: none; background: rgba(0,0,0,0.35);
+      color: #fff; font-size: 20px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .icon-btn:active { background: rgba(0,0,0,0.6); }
+
+    /* 타이머 카운트다운 */
+    #countdown {
+      position: absolute; inset: 0;
+      display: none; align-items: center; justify-content: center;
+      font-size: 120px; font-weight: 700; color: #fff;
+      text-shadow: 0 4px 24px rgba(0,0,0,0.6);
+      z-index: 4; pointer-events: none;
+    }
+
+    /* 하단 컨트롤 */
+    #controls {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 22px 30px calc(22px + env(safe-area-inset-bottom));
+      background: linear-gradient(to top, rgba(0,0,0,0.55), transparent);
+      z-index: 5;
+    }
+    /* 마지막 사진 미리보기 */
+    #thumb {
+      width: 54px; height: 54px; border-radius: 12px;
+      background: #222 center/cover no-repeat;
+      border: 2px solid rgba(255,255,255,0.6);
+      cursor: pointer;
+    }
+    #thumb.empty { border-style: dashed; opacity: 0.4; }
+
+    /* 셔터 버튼 */
+    #shutter {
+      width: 78px; height: 78px; border-radius: 50%;
+      background: #fff; border: 4px solid rgba(255,255,255,0.35);
+      cursor: pointer; position: relative;
+      transition: transform 0.08s ease;
+    }
+    #shutter:active { transform: scale(0.9); }
+    #shutter::after {
+      content: ""; position: absolute; inset: 5px;
+      border-radius: 50%; background: #fff;
+      box-shadow: inset 0 0 0 2px #000;
+    }
+
+    /* 전환 버튼 */
+    #switch { font-size: 24px; }
+
+    /* 상태 메시지 */
+    #status {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center; padding: 24px;
+      font-size: 15px; line-height: 1.6; color: #ccc;
+      z-index: 3; max-width: 320px;
+    }
+    #status button {
+      margin-top: 16px; padding: 12px 24px;
+      background: var(--accent); color: #000; border: none;
+      border-radius: 24px; font-size: 15px; font-weight: 600; cursor: pointer;
+    }
+
+    /* 설정 토글 라벨 */
+    .toggle-row {
+      position: absolute; top: 64px; left: 0; right: 0;
+      display: flex; gap: 8px; justify-content: center;
+      z-index: 5;
+    }
+    .chip {
+      font-size: 13px; font-weight: 500;
+      padding: 7px 14px; border-radius: 20px;
+      background: rgba(0,0,0,0.4); color: #fff;
+      border: 1px solid rgba(255,255,255,0.15);
+      cursor: pointer;
+    }
+    .chip.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+    /* 갤러리 오버레이 */
+    #gallery {
+      position: fixed; inset: 0; background: #000;
+      display: none; flex-direction: column; z-index: 20;
+    }
+    #gallery.open { display: flex; }
+    #gallery header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 18px; border-bottom: 1px solid #222;
+    }
+    #gallery header h2 { font-size: 16px; font-weight: 600; }
+    #galleryGrid {
+      flex: 1; overflow-y: auto; padding: 10px;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      align-content: start;
+    }
+    #galleryGrid .cell { position: relative; aspect-ratio: 1; }
+    #galleryGrid img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 8px; display: block;
+    }
+    #galleryGrid a.dl {
+      position: absolute; bottom: 6px; right: 6px;
+      width: 30px; height: 30px; border-radius: 50%;
+      background: rgba(0,0,0,0.6); color: #fff; text-decoration: none;
+      display: flex; align-items: center; justify-content: center; font-size: 15px;
+    }
+    #galleryEmpty { padding: 40px; text-align: center; color: #777; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="stage">
+      <video id="video" autoplay playsinline muted></video>
+      <div id="flash"></div>
+      <div id="countdown"></div>
+
+      <div id="topbar">
+        <div class="title">무음카메라 <span class="silent-badge">SILENT</span></div>
+        <div style="display:flex; gap:8px;">
+          <button class="icon-btn" id="installBtn" title="앱 설치" style="display:none; width:auto; padding:0 14px; border-radius:21px; font-size:13px; gap:5px;">⤓ 설치</button>
+          <button class="icon-btn" id="galleryBtn" title="갤러리">▦</button>
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <button class="chip" id="timerChip" title="타이머">⏱ 타이머 끔</button>
+        <button class="chip" id="gridChip" title="격자">▦ 격자</button>
+      </div>
+
+      <div id="status">
+        <div id="statusText">카메라를 시작하려면 아래 버튼을 누르세요.</div>
+        <button id="startBtn">카메라 시작</button>
+      </div>
+
+      <div id="controls" style="visibility:hidden">
+        <div id="thumb" class="empty" title="마지막 사진"></div>
+        <div id="shutter" title="촬영 (무음)"></div>
+        <button class="icon-btn" id="switch" title="전/후면 전환">⟳</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 격자 라인 -->
+  <svg id="gridLines" style="display:none;position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2" preserveAspectRatio="none" viewBox="0 0 3 3">
+    <line x1="1" y1="0" x2="1" y2="3" stroke="rgba(255,255,255,0.35)" stroke-width="0.008"/>
+    <line x1="2" y1="0" x2="2" y2="3" stroke="rgba(255,255,255,0.35)" stroke-width="0.008"/>
+    <line x1="0" y1="1" x2="3" y2="1" stroke="rgba(255,255,255,0.35)" stroke-width="0.008"/>
+    <line x1="0" y1="2" x2="3" y2="2" stroke="rgba(255,255,255,0.35)" stroke-width="0.008"/>
+  </svg>
+
+  <!-- 갤러리 -->
+  <div id="gallery">
+    <header>
+      <h2>촬영한 사진</h2>
+      <button class="icon-btn" id="galleryClose">✕</button>
+    </header>
+    <div id="galleryGrid"></div>
+    <div id="galleryEmpty" style="display:none">아직 촬영한 사진이 없습니다.</div>
+  </div>
+
+  <script>
+    const video    = document.getElementById('video');
+    const flash    = document.getElementById('flash');
+    const stage    = document.getElementById('stage');
+    const status   = document.getElementById('status');
+    const statusText = document.getElementById('statusText');
+    const startBtn = document.getElementById('startBtn');
+    const controls = document.getElementById('controls');
+    const shutter  = document.getElementById('shutter');
+    const switchBtn = document.getElementById('switch');
+    const thumb    = document.getElementById('thumb');
+    const countdown = document.getElementById('countdown');
+    const timerChip = document.getElementById('timerChip');
+    const gridChip = document.getElementById('gridChip');
+    const gridLines = document.getElementById('gridLines');
+    const galleryBtn = document.getElementById('galleryBtn');
+    const gallery  = document.getElementById('gallery');
+    const galleryClose = document.getElementById('galleryClose');
+    const galleryGrid = document.getElementById('galleryGrid');
+    const galleryEmpty = document.getElementById('galleryEmpty');
+
+    let stream = null;
+    let facing = 'environment';   // 'user' | 'environment'
+    let timerSec = 0;             // 0 / 3 / 5 / 10
+    let photos = [];              // { url, blob, name }
+    const TIMER_STEPS = [0, 3, 5, 10];
+
+    // --- 카메라 시작 ---
+    async function startCamera() {
+      stopCamera();
+      statusText.textContent = '카메라를 여는 중...';
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: facing,
+            width:  { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false               // 오디오 없음 → 완전 무음
+        });
+        video.srcObject = stream;
+        video.classList.toggle('mirror', facing === 'user');
+        status.style.display = 'none';
+        controls.style.visibility = 'visible';
+      } catch (err) {
+        status.style.display = 'block';
+        controls.style.visibility = 'hidden';
+        statusText.textContent = '카메라를 사용할 수 없습니다.\n권한을 허용했는지 확인해 주세요.\n(' + err.name + ')';
+        startBtn.style.display = 'inline-block';
+        startBtn.textContent = '다시 시도';
+      }
+    }
+
+    function stopCamera() {
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    }
+
+    // --- 촬영 (무음) ---
+    function capture() {
+      if (!stream) return;
+      const track = stream.getVideoTracks()[0];
+      const settings = track.getSettings();
+      const w = settings.width  || video.videoWidth  || 1280;
+      const h = settings.height || video.videoHeight || 720;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+
+      if (facing === 'user') {          // 전면은 미리보기와 동일하게 좌우 반전
+        ctx.translate(w, 0); ctx.scale(-1, 1);
+      }
+      ctx.drawImage(video, 0, 0, w, h);
+
+      // 시각적 셔터 효과만 (소리 없음)
+      flash.classList.add('fire');
+      requestAnimationFrame(() => { flash.classList.remove('fire'); });
+
+      canvas.toBlob(blob => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const name = 'silent_' + timestamp() + '.jpg';
+        photos.unshift({ url, blob, name });
+        thumb.style.backgroundImage = 'url(' + url + ')';
+        thumb.classList.remove('empty');
+      }, 'image/jpeg', 0.95);
+    }
+
+    function timestamp() {
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '_' +
+             p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+    }
+
+    // --- 타이머 후 촬영 ---
+    function shoot() {
+      if (timerSec === 0) { capture(); return; }
+      let n = timerSec;
+      countdown.style.display = 'flex';
+      countdown.textContent = n;
+      const iv = setInterval(() => {
+        n--;
+        if (n <= 0) {
+          clearInterval(iv);
+          countdown.style.display = 'none';
+          capture();
+        } else {
+          countdown.textContent = n;
+        }
+      }, 1000);
+    }
+
+    // --- 갤러리 ---
+    function openGallery() {
+      galleryGrid.innerHTML = '';
+      if (photos.length === 0) {
+        galleryEmpty.style.display = 'block';
+      } else {
+        galleryEmpty.style.display = 'none';
+        photos.forEach(p => {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.innerHTML =
+            '<img src="' + p.url + '" />' +
+            '<a class="dl" href="' + p.url + '" download="' + p.name + '" title="저장">⤓</a>';
+          galleryGrid.appendChild(cell);
+        });
+      }
+      gallery.classList.add('open');
+    }
+
+    // --- 이벤트 ---
+    startBtn.addEventListener('click', () => { startBtn.style.display = 'none'; startCamera(); });
+    shutter.addEventListener('click', shoot);
+    switchBtn.addEventListener('click', () => {
+      facing = (facing === 'environment') ? 'user' : 'environment';
+      startCamera();
+    });
+    timerChip.addEventListener('click', () => {
+      const idx = (TIMER_STEPS.indexOf(timerSec) + 1) % TIMER_STEPS.length;
+      timerSec = TIMER_STEPS[idx];
+      timerChip.textContent = timerSec === 0 ? '⏱ 타이머 끔' : '⏱ ' + timerSec + '초';
+      timerChip.classList.toggle('active', timerSec !== 0);
+    });
+    gridChip.addEventListener('click', () => {
+      const on = gridLines.style.display === 'none';
+      gridLines.style.display = on ? 'block' : 'none';
+      // 격자를 stage 안으로 이동
+      if (on && gridLines.parentElement !== stage) stage.appendChild(gridLines);
+      gridChip.classList.toggle('active', on);
+    });
+    galleryBtn.addEventListener('click', openGallery);
+    galleryClose.addEventListener('click', () => gallery.classList.remove('open'));
+    thumb.addEventListener('click', openGallery);
+
+    // 탭 전환 시 카메라 정리 / 복귀
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) stopCamera();
+      else if (status.style.display === 'none') startCamera();
+    });
+
+    // --- PWA: 설치 & 서비스워커 ---
+    const installBtn = document.getElementById('installBtn');
+    let deferredPrompt = null;
+
+    // 안드로이드/데스크톱 크롬: 설치 배너를 버튼으로 대체
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBtn.style.display = 'flex';
+    });
+    installBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      if (outcome === 'accepted') installBtn.style.display = 'none';
+    });
+    window.addEventListener('appinstalled', () => { installBtn.style.display = 'none'; });
+
+    // 이미 설치되어 실행 중이면 버튼 숨김
+    if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+      installBtn.style.display = 'none';
+    }
+
+    // 서비스워커 등록 (오프라인 실행 + 설치 요건)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
