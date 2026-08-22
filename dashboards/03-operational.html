@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>운영 대시보드</title>
+<link rel="stylesheet" href="assets/dashboard.css"></head>
+<body><div class="page">
+  <div class="page-head">
+    <div><div class="kind">03 · Operational dashboard</div>
+      <h1>운영 대시보드 — 실시간 서비스 모니터링</h1>
+      <p class="sub">운영·관제팀용 · 지금 이상이 있는가에만 답하는 화면 · 갱신 주기 10초</p></div>
+    <div class="filters"><span class="chip on">실시간</span><span class="chip">최근 1시간</span><span class="chip">서울 리전 ▾</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card c3"><p class="tile-label">현재 처리량</p><div class="tile-value">12,840 <span style="font-size:13px;color:var(--text-secondary)">req/s</span></div>
+      <div class="delta">정상 범위 8K~16K</div></div>
+    <div class="card c3"><p class="tile-label">응답시간 p95</p><div class="tile-value">412 <span style="font-size:13px;color:var(--text-secondary)">ms</span></div>
+      <div class="delta"><span class="status s-warning"><i></i>임계 400ms 초과</span></div></div>
+    <div class="card c3"><p class="tile-label">오류율</p><div class="tile-value">0.87%</div>
+      <div class="delta"><span class="status s-serious"><i></i>임계 0.5% 초과</span></div></div>
+    <div class="card c3"><p class="tile-label">가동률 (24h)</p><div class="tile-value">99.95%</div>
+      <div class="delta"><span class="status s-good"><i></i>SLA 99.9% 충족</span></div></div>
+
+    <div class="card c7">
+      <h2>분당 요청 수 · 최근 30분</h2>
+      <p class="note">단위: 천 건/분</p>
+      <div class="legend">
+        <span><i style="background:var(--series-1)"></i>정상 응답</span>
+        <span><i style="background:var(--series-8)"></i>오류 응답</span>
+      </div>
+      <div id="ch1"></div>
+    </div>
+    <div class="card c5">
+      <h2>서비스별 상태</h2>
+      <p class="note">임계치 대비 현재 부하</p>
+      <div id="svc"></div>
+    </div>
+
+    <div class="card">
+      <h2>알람 큐</h2>
+      <p class="note">미확인 알람 · 심각도 순</p>
+      <table>
+        <thead><tr><th>시각</th><th>심각도</th><th>대상</th><th>내용</th><th class="num">지속</th></tr></thead>
+        <tbody>
+          <tr><td>14:22:07</td><td><span class="status s-critical"><i></i>위험</span></td><td>payment-api</td><td>결제 승인 지연 — 외부 PG 응답 3초 초과</td><td class="num">6분</td></tr>
+          <tr><td>14:19:41</td><td><span class="status s-serious"><i></i>경고</span></td><td>order-db</td><td>커넥션 풀 사용률 92%</td><td class="num">9분</td></tr>
+          <tr><td>14:11:03</td><td><span class="status s-warning"><i></i>주의</span></td><td>search-svc</td><td>p95 응답시간 412ms (임계 400ms)</td><td class="num">17분</td></tr>
+          <tr><td>13:58:55</td><td><span class="status s-good"><i></i>해제</span></td><td>cdn-edge</td><td>캐시 적중률 회복 (96.2%)</td><td class="num">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <p class="foot">샘플 데이터 · 대시보드 유형 예시 (운영 / Operational)</p>
+</div>
+<script src="assets/charts.js"></script>
+<script>
+const t = []; for (let i = 30; i >= 1; i--) t.push(i % 5 ? '' : ('-' + i + 'm'));
+columns(document.getElementById('ch1'), {
+  cats: t,
+  series: [
+    {name:'정상', color:'#2a78d6', values:[720,735,741,728,750,762,758,770,781,776,790,802,795,810,806,818,824,812,830,842,836,848,855,861,847,858,866,872,864,870]},
+    {name:'오류', color:'#e34948', values:[  4,  5,  4,  6,  5,  4,  7,  6,  5,  8, 12, 18, 24, 31, 28, 22, 17, 14, 12, 10,  9, 11, 14, 19, 26, 33, 29, 24, 18, 15]}
+  ], height:240});
+const svcs = [
+  {name:'api-gateway', pct:64, st:'good',     txt:'정상'},
+  {name:'order-svc',   pct:71, st:'good',     txt:'정상'},
+  {name:'search-svc',  pct:83, st:'warning',  txt:'주의'},
+  {name:'order-db',    pct:92, st:'serious',  txt:'경고'},
+  {name:'payment-api', pct:98, st:'critical', txt:'위험'}
+];
+const color = {good:'#2a78d6', warning:'#fab219', serious:'#ec835a', critical:'#d03b3b'};
+document.getElementById('svc').innerHTML = svcs.map(s => `
+  <div style="margin:10px 0 14px">
+    <div class="row"><span>${s.name}</span>
+      <span class="status s-${s.st}"><i></i>${s.txt} · ${s.pct}%</span></div>
+    <div class="meter" style="margin-top:6px"><i style="width:${s.pct}%;background:${color[s.st]}"></i></div>
+  </div>`).join('');
+</script></body></html>

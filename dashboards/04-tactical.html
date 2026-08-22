@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>전술 대시보드</title>
+<link rel="stylesheet" href="assets/dashboard.css"></head>
+<body><div class="page">
+  <div class="page-head">
+    <div><div class="kind">04 · Tactical dashboard</div>
+      <h1>전술 대시보드 — 부서 · 프로젝트 진척 관리</h1>
+      <p class="sub">팀장·PM용 · 계획 대비 진척과 병목을 주간 단위로 점검 · 갱신 주기 주 1회</p></div>
+    <div class="filters"><span class="chip on">이번 분기</span><span class="chip">제품개발본부 ▾</span><span class="chip">전체 담당자 ▾</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card c3"><p class="tile-label">계획 대비 진척</p><div class="tile-value">82%</div>
+      <div class="meter" style="margin-top:10px"><i style="width:82%"></i></div>
+      <div class="delta">계획 88% · <span class="down">▼ 6%p</span> 지연</div></div>
+    <div class="card c3"><p class="tile-label">완료 과제</p><div class="tile-value">47 / 62</div>
+      <div class="delta">이번 주 <span class="up">+9건</span> 완료</div></div>
+    <div class="card c3"><p class="tile-label">지연 과제</p><div class="tile-value">8</div>
+      <div class="delta"><span class="status s-serious"><i></i>2건은 2주 이상 지연</span></div></div>
+    <div class="card c3"><p class="tile-label">잔여 공수</p><div class="tile-value">184 <span style="font-size:13px;color:var(--text-secondary)">MD</span></div>
+      <div class="delta">잔여 기간 6주 · 가용 210MD</div></div>
+
+    <div class="card c7">
+      <h2>주차별 완료 과제 (계획 대비 실적)</h2>
+      <p class="note">단위: 건</p>
+      <div class="legend">
+        <span><i style="background:var(--series-1)"></i>완료</span>
+        <span><i style="background:var(--series-4)"></i>진행 중</span>
+        <span><i style="background:var(--series-8)"></i>지연</span>
+      </div>
+      <div id="ch1"></div>
+    </div>
+    <div class="card c5">
+      <h2>담당자별 잔여 과제</h2>
+      <p class="note">단위: 건 · 부하 분산 점검용</p>
+      <div id="ch2"></div>
+    </div>
+
+    <div class="card">
+      <h2>마일스톤 현황</h2>
+      <p class="note">지연 마일스톤은 상태 아이콘과 라벨로 함께 표기</p>
+      <table>
+        <thead><tr><th>마일스톤</th><th>담당</th><th>목표일</th><th class="num">진척</th><th>상태</th></tr></thead>
+        <tbody>
+          <tr><td>요구사항 확정</td><td>김지훈</td><td>2026-06-12</td><td class="num">100%</td><td><span class="status s-good"><i></i>완료</span></td></tr>
+          <tr><td>UI 설계</td><td>박서연</td><td>2026-07-03</td><td class="num">100%</td><td><span class="status s-good"><i></i>완료</span></td></tr>
+          <tr><td>백엔드 API 개발</td><td>이도현</td><td>2026-08-14</td><td class="num">78%</td><td><span class="status s-warning"><i></i>주의</span></td></tr>
+          <tr><td>결제 연동</td><td>최민석</td><td>2026-08-21</td><td class="num">42%</td><td><span class="status s-serious"><i></i>지연</span></td></tr>
+          <tr><td>통합 테스트</td><td>정하늘</td><td>2026-09-04</td><td class="num">0%</td><td><span class="status s-critical"><i></i>착수 불가</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <p class="foot">샘플 데이터 · 대시보드 유형 예시 (전술 / Tactical)</p>
+</div>
+<script src="assets/charts.js"></script>
+<script>
+columns(document.getElementById('ch1'), {
+  cats:['W23','W24','W25','W26','W27','W28','W29','W30'],
+  series:[
+    {name:'완료',   color:'#2a78d6', values:[4,6,5,7,6,8,7,9]},
+    {name:'진행 중',color:'#eda100', values:[3,3,4,3,4,3,4,4]},
+    {name:'지연',   color:'#e34948', values:[0,1,1,2,1,2,3,2]}
+  ], height:236});
+hbars(document.getElementById('ch2'), {unit:'건', width:420, rowH:44, data:[
+  {label:'이도현', value:12},
+  {label:'최민석', value:10},
+  {label:'정하늘', value: 8},
+  {label:'박서연', value: 5},
+  {label:'김지훈', value: 3}
+]});
+</script></body></html>

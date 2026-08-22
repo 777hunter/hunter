@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>전략 대시보드</title>
+<link rel="stylesheet" href="assets/dashboard.css"></head>
+<body><div class="page">
+  <div class="page-head">
+    <div><div class="kind">01 · Strategic dashboard</div>
+      <h1>전략 대시보드 — 경영 KPI 스코어카드</h1>
+      <p class="sub">경영진용 · 분기/연간 목표 대비 달성도를 한 화면에서 판단 · 갱신 주기 월 1회</p></div>
+    <div class="filters"><span class="chip">FY2026</span><span class="chip on">2분기</span><span class="chip">전사</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card c4">
+      <p class="tile-label">연간 목표 대비 누적 매출</p>
+      <div class="hero">68<span style="font-size:26px">%</span></div>
+      <div class="delta">목표 1,200억 중 <strong>816억</strong> 달성 · <span class="up">▲ 6%p</span> 전분기 대비</div>
+      <div class="meter" style="margin-top:12px"><i style="width:68%"></i></div>
+    </div>
+    <div class="card c4">
+      <p class="tile-label">영업이익률</p>
+      <div class="tile-value">14.2%</div>
+      <div class="delta"><span class="up">▲ 1.1%p</span> 전년 동기 대비 · 목표 15.0%</div>
+      <div id="sp1" style="margin-top:8px;max-width:180px"></div>
+    </div>
+    <div class="card c4">
+      <p class="tile-label">신규 고객 확보 (분기)</p>
+      <div class="tile-value">1,284</div>
+      <div class="delta"><span class="down">▼ 3%</span> 전분기 대비 · 목표 1,400</div>
+      <div id="sp2" style="margin-top:8px;max-width:180px"></div>
+    </div>
+
+    <div class="card c7">
+      <h2>분기별 매출 추이</h2>
+      <p class="note">단위: 억원 · 사업부문 누적</p>
+      <div class="legend">
+        <span><i style="background:var(--series-1)"></i>제품</span>
+        <span><i style="background:var(--series-2)"></i>서비스</span>
+        <span><i style="background:var(--series-3)"></i>구독</span>
+      </div>
+      <div id="ch1"></div>
+    </div>
+    <div class="card c5">
+      <h2>전략과제 진행률</h2>
+      <p class="note">2026년 전사 5대 과제</p>
+      <div id="ch2"></div>
+    </div>
+
+    <div class="card">
+      <h2>핵심 지표 요약</h2>
+      <p class="note">목표 대비 상태 — 색과 함께 아이콘·라벨로 상태를 표기</p>
+      <table>
+        <thead><tr><th>지표</th><th class="num">실적</th><th class="num">목표</th><th class="num">달성률</th><th>상태</th></tr></thead>
+        <tbody>
+          <tr><td>연간 매출</td><td class="num">816억</td><td class="num">1,200억</td><td class="num">68%</td><td><span class="status s-good"><i></i>정상</span></td></tr>
+          <tr><td>영업이익률</td><td class="num">14.2%</td><td class="num">15.0%</td><td class="num">95%</td><td><span class="status s-good"><i></i>정상</span></td></tr>
+          <tr><td>신규 고객</td><td class="num">1,284</td><td class="num">1,400</td><td class="num">92%</td><td><span class="status s-warning"><i></i>주의</span></td></tr>
+          <tr><td>고객 유지율</td><td class="num">88.4%</td><td class="num">92.0%</td><td class="num">96%</td><td><span class="status s-serious"><i></i>경고</span></td></tr>
+          <tr><td>신제품 매출 비중</td><td class="num">9.1%</td><td class="num">20.0%</td><td class="num">46%</td><td><span class="status s-critical"><i></i>위험</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <p class="foot">샘플 데이터 · 대시보드 유형 예시 (전략 / Strategic)</p>
+</div>
+<script src="assets/charts.js"></script>
+<script>
+sparkline(document.getElementById('sp1'), [11.8,12.4,12.1,13.0,13.6,14.2], '#2a78d6');
+sparkline(document.getElementById('sp2'), [980,1120,1240,1330,1322,1284], '#eb6834');
+columns(document.getElementById('ch1'), {
+  cats:['25 Q1','25 Q2','25 Q3','25 Q4','26 Q1','26 Q2'],
+  series:[
+    {name:'제품',   color:'#2a78d6', values:[128,142,150,163,171,182]},
+    {name:'서비스', color:'#eb6834', values:[ 62, 68, 71, 78, 84, 92]},
+    {name:'구독',   color:'#1baf7a', values:[ 21, 28, 34, 41, 52, 63]}
+  ], unit:'', labelLast:true, height:236});
+hbars(document.getElementById('ch2'), {unit:'%', width:420, rowH:44, data:[
+  {label:'글로벌 진출',   value:74},
+  {label:'구독 전환',     value:63},
+  {label:'생산 자동화',   value:58},
+  {label:'신제품 출시',   value:46},
+  {label:'ESG 인증',      value:31}
+]});
+</script></body></html>

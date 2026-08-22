@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>분석 대시보드</title>
+<link rel="stylesheet" href="assets/dashboard.css"></head>
+<body><div class="page">
+  <div class="page-head">
+    <div><div class="kind">02 · Analytical dashboard</div>
+      <h1>분석 대시보드 — 트렌드와 원인 탐색</h1>
+      <p class="sub">분석가·기획자용 · 기간 비교와 세그먼트 드릴다운으로 "왜"를 찾는 화면 · 갱신 주기 일 1회</p></div>
+    <div class="filters"><span class="chip">최근 7일</span><span class="chip on">최근 12주</span><span class="chip">연간</span><span class="chip">채널 전체 ▾</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card c8">
+      <h2>주간 활성 사용자 추이</h2>
+      <p class="note">단위: 천 명 · 최근 12주</p>
+      <div class="legend">
+        <span><i style="background:var(--series-1)"></i>모바일</span>
+        <span><i style="background:var(--series-2)"></i>웹</span>
+        <span><i style="background:var(--series-3)"></i>파트너</span>
+      </div>
+      <div id="ch1"></div>
+    </div>
+    <div class="card c4">
+      <p class="tile-label">주간 활성 사용자 (WAU)</p>
+      <div class="tile-value">312K</div>
+      <div class="delta"><span class="up">▲ 8.4%</span> 4주 전 대비</div>
+      <hr style="border:0;border-top:1px solid var(--grid);margin:14px 0">
+      <p class="tile-label">전환율</p>
+      <div class="tile-value">3.42%</div>
+      <div class="delta"><span class="down">▼ 0.21%p</span> 4주 전 대비</div>
+      <hr style="border:0;border-top:1px solid var(--grid);margin:14px 0">
+      <p class="tile-label">평균 세션 시간</p>
+      <div class="tile-value">6분 12초</div>
+      <div class="delta"><span class="up">▲ 34초</span> 4주 전 대비</div>
+    </div>
+
+    <div class="card c6">
+      <h2>가입 코호트 잔존율</h2>
+      <p class="note">가입 주차별 · 경과 주차 기준 잔존 비율(%)</p>
+      <div id="ch2"></div>
+    </div>
+    <div class="card c6">
+      <h2>유입 채널별 신규 가입</h2>
+      <p class="note">최근 4주 합계 · 단위: 명</p>
+      <div id="ch3"></div>
+    </div>
+
+    <div class="card">
+      <h2>세그먼트별 상세</h2>
+      <p class="note">표 보기 — 차트에 직접 라벨하지 않은 값은 여기서 확인</p>
+      <table>
+        <thead><tr><th>세그먼트</th><th class="num">사용자</th><th class="num">전환율</th><th class="num">ARPU</th><th class="num">4주 변화</th></tr></thead>
+        <tbody>
+          <tr><td>신규 (0~4주)</td><td class="num">86,400</td><td class="num">2.11%</td><td class="num">3,200원</td><td class="num" style="color:var(--good-text)">+12.4%</td></tr>
+          <tr><td>일반 (1~6개월)</td><td class="num">124,900</td><td class="num">3.48%</td><td class="num">7,850원</td><td class="num" style="color:var(--good-text)">+4.1%</td></tr>
+          <tr><td>충성 (6개월+)</td><td class="num">78,200</td><td class="num">5.92%</td><td class="num">14,300원</td><td class="num" style="color:var(--good-text)">+1.8%</td></tr>
+          <tr><td>휴면 복귀</td><td class="num">22,500</td><td class="num">1.74%</td><td class="num">2,100원</td><td class="num" style="color:var(--critical)">−6.7%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <p class="foot">샘플 데이터 · 대시보드 유형 예시 (분석 / Analytical)</p>
+</div>
+<script src="assets/charts.js"></script>
+<script>
+lines(document.getElementById('ch1'), {
+  x:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12'],
+  series:[
+    {name:'모바일',  color:'#2a78d6', values:[148,152,157,155,163,169,172,178,181,188,194,198]},
+    {name:'웹',      color:'#eb6834', values:[ 82, 84, 83, 86, 88, 87, 90, 92, 91, 93, 95, 96]},
+    {name:'파트너',  color:'#1baf7a', values:[ 12, 13, 14, 15, 15, 16, 16, 17, 17, 18, 18, 18]}
+  ], area:false, height:250});
+heatmap(document.getElementById('ch2'), {
+  rows:['6월 1주','6월 2주','6월 3주','6월 4주','7월 1주'],
+  cols:['W0','W1','W2','W3','W4','W5'],
+  values:[
+    [100,62,48,41,36,33],
+    [100,64,51,44,39,35],
+    [100,66,53,46,41,null],
+    [100,69,57,49,null,null],
+    [100,71,59,null,null,null]
+  ]});
+hbars(document.getElementById('ch3'), {data:[
+  {label:'검색',        value:18420},
+  {label:'추천 · 초대', value:12300},
+  {label:'SNS 광고',    value: 9840},
+  {label:'제휴 앱',     value: 5210},
+  {label:'직접 방문',   value: 3160}
+]});
+</script></body></html>

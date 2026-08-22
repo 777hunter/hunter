@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>날씨 대시보드</title>
+<link rel="stylesheet" href="assets/dashboard.css"></head>
+<body><div class="page">
+  <div class="page-head">
+    <div><div class="kind">05 · Informational dashboard · 저장소 데이터 적용</div>
+      <h1>날씨 대시보드 — 2026년 8월 5일 전국</h1>
+      <p class="sub">이 저장소의 <code>weather/2026-08-05.md</code> 내용을 그대로 대시보드 형태로 옮긴 예시</p></div>
+    <div class="filters"><span class="chip on">오늘</span><span class="chip">주간</span><span class="chip">전국 ▾</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card c4">
+      <p class="tile-label">전국 최고기온</p>
+      <div class="hero">37<span style="font-size:26px">℃</span></div>
+      <div class="delta">가장 더운 곳 <strong>대구</strong> · 낮 최고 34~37℃</div>
+      <div style="margin-top:10px"><span class="status s-critical"><i></i>폭염 · 체감 35℃ 안팎</span></div>
+    </div>
+    <div class="card c4">
+      <p class="tile-label">아침 최저기온</p>
+      <div class="tile-value">25 ~ 27℃</div>
+      <div class="delta">전 지역 <span class="status s-serious" style="font-size:12px"><i></i>열대야</span></div>
+      <hr style="border:0;border-top:1px solid var(--grid);margin:12px 0">
+      <p class="tile-label">일교차</p>
+      <div class="tile-value">평균 8.7℃</div>
+    </div>
+    <div class="card c4">
+      <p class="tile-label">소나기 유의 지역</p>
+      <div class="tile-value">5 <span style="font-size:13px;color:var(--text-secondary)">권역</span></div>
+      <div class="delta">인천·경기남서부, 충남·전북서해안, 광주·전남, 제주산지</div>
+      <div style="margin-top:10px"><span class="status s-warning"><i></i>우산 지참 권장</span></div>
+    </div>
+
+    <div class="card c8">
+      <h2>지역별 기온 범위</h2>
+      <p class="note">단위: ℃ · 아침 최저 → 낮 최고 · 붉은 막대가 최고기온 지점</p>
+      <div id="ch1"></div>
+    </div>
+    <div class="card c4">
+      <h2>예상 강수량</h2>
+      <p class="note">단위: ㎜ · 권역별 상한</p>
+      <div id="ch2"></div>
+    </div>
+
+    <div class="card">
+      <h2>지역별 상세</h2>
+      <p class="note">오전 → 오후 하늘 상태 · 최저/최고 기온</p>
+      <table>
+        <thead><tr><th>지역</th><th>오전 → 오후</th><th class="num">최저</th><th class="num">최고</th><th class="num">일교차</th></tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+  </div>
+  <p class="foot">출처: 기상청 단기예보(weather.go.kr) · 저장소 <code>weather/2026-08-05.md</code></p>
+</div>
+<script src="assets/charts.js"></script>
+<script>
+const cities = [
+  ['서울','☀️ → ⛅',27,36], ['인천','⛅ → 🌦️',26,32], ['수원','☀️ → 🌦️',26,35],
+  ['춘천','☀️ → ☀️',25,35], ['강릉','☀️ → ☀️',27,34], ['청주','☀️ → ⛅',26,36],
+  ['대전','☀️ → 🌦️',26,36], ['세종','☀️ → 🌦️',26,36], ['전주','⛅ → 🌦️',26,35],
+  ['광주','⛅ → 🌦️',26,35], ['대구','☀️ → ☀️',27,37], ['부산','☀️ → ⛅',27,34],
+  ['울산','☀️ → ☀️',27,35], ['창원','☀️ → ⛅',27,36], ['제주','⛅ → 🌦️',27,32]
+];
+rangeBars(document.getElementById('ch1'), {
+  cats: cities.map(c => c[0]),
+  lo: cities.map(c => c[2]), hi: cities.map(c => c[3]),
+  yMin:20, yMax:40, unit:'℃', height:240});
+hbars(document.getElementById('ch2'), {unit:'㎜', color:'#2a78d6', width:330, rowH:46, data:[
+  {label:'광주·전남',      value:30},
+  {label:'인천·경기남서부',value:20},
+  {label:'충남·전북서해안',value:15},
+  {label:'제주 산지',      value:10}
+]});
+document.getElementById('tb').innerHTML = cities.map(c =>
+  `<tr><td>${c[0]}</td><td>${c[1]}</td><td class="num">${c[2]}℃</td><td class="num">${c[3]}℃</td><td class="num">${c[3]-c[2]}℃</td></tr>`).join('');
+</script></body></html>
