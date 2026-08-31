@@ -436,32 +436,16 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
   function buildDoc() {
     var css = document.getElementById('appcss').textContent;
     var js = document.getElementById('app').textContent;
-    var json = JSON.stringify(S).replace(/</g, '\u003c');
-    return '<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-' +
-      '<meta name="viewport" content="width=device-width,initial-scale=1">
-' +
-      '<title>' + TITLE + '</title>
-' +
-      '<link rel="preconnect" href="https://fonts.googleapis.com">
-' +
-      '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-' +
-      '<link rel="stylesheet" href="' + FONTS + '">
-' +
-      '<style id="appcss">' + css + '</style>
-</head>
-<body>
-<div id="root"></div>
-' +
-      '<script id="state" type="application/json">' + json + '<\/script>
-' +
-      '<script id="app">' + js + '<\/script>
-</body>
-</html>';
+    var json = JSON.stringify(S).replace(/</g, '\\u003c');
+    return '<!doctype html>\n<html lang="ko">\n<head>\n<meta charset="utf-8">\n' +
+      '<meta name="viewport" content="width=device-width,initial-scale=1">\n' +
+      '<title>' + TITLE + '</title>\n' +
+      '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
+      '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
+      '<link rel="stylesheet" href="' + FONTS + '">\n' +
+      '<style id="appcss">' + css + '</style>\n</head>\n<body>\n<div id="root"></div>\n' +
+      '<script id="state" type="application/json">' + json + '<\/script>\n' +
+      '<script id="app">' + js + '<\/script>\n</body>\n</html>';
   }
 
   function touch() {
