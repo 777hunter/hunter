@@ -161,6 +161,35 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
   .form .pair{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ── 즐겨찾기 가져오기 ── */
+.imp-open input{display:none}
+.imp{background:var(--panel);border:1px solid var(--line);border-top:none;padding:16px}
+.imp-hd{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;margin-bottom:6px}
+.imp-hd h2{margin:0;font-size:15px;font-weight:600}
+.imp-file{font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+.imp .note{margin:0 0 12px;font-size:13px;color:var(--ink-2)}
+.imp-stats{gap:20px;margin-bottom:12px}
+.imp-stats .stat dd{font-size:19px}
+.imp-chips{margin-bottom:10px}
+.imp-tools{display:flex;gap:8px;margin-bottom:10px}
+.imp-list{max-height:320px;overflow-y:auto;border:1px solid var(--line-2);border-radius:4px;
+  background:var(--panel-2)}
+.imp-row{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:11px;align-items:start;
+  padding:9px 12px;border-bottom:1px solid var(--line-2)}
+.imp-row:last-child{border-bottom:none}
+.imp-row.dup{opacity:.55}
+.imp-row input[type="checkbox"]{margin:3px 0 0}
+.imp-t{font-size:14px;font-weight:500;line-height:1.4}
+.imp-u{margin-top:2px;font-family:var(--mono);font-size:11px;color:var(--ink-3);word-break:break-all}
+.imp-side{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;align-items:center}
+.imp-f{padding:2px 7px;font-size:11.5px;color:var(--ink-2);background:var(--panel);
+  border:1px solid var(--line);border-radius:2px;white-space:nowrap}
+.imp .rowbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+@media (max-width:640px){
+  .imp-row{grid-template-columns:20px minmax(0,1fr);gap:9px}
+  .imp-side{grid-column:2/-1;justify-content:flex-start}
+}
 </style>
 
 <div id="root"></div>
@@ -195,7 +224,7 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
   }
   var S = loadState();
 
-  var ui = { q: '', cat: 'all', sort: 'updated', admin: false, showHidden: false, edit: null, adding: false };
+  var ui = { q: '', cat: 'all', sort: 'updated', admin: false, showHidden: false, edit: null, adding: false, imp: null };
   var pub = null, capResolved = false, dirty = false, msg = null, saving = false, pending = null;
 
   function pref(k, v) {
@@ -362,12 +391,153 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     return out + '</div></li>';
   }
 
+  /* ── 즐겨찾기 파일 읽기 ─────────────────────────── */
+  function decode(s) {
+    var ta = document.createElement('textarea');
+    ta.innerHTML = String(s == null ? '' : s);
+    return ta.value;
+  }
+  function stripTags(s) {
+    return decode(String(s == null ? '' : s).replace(/<[^>]+>/g, '')).trim();
+  }
+  function normUrl(u) { return String(u == null ? '' : u).replace(/\/+$/, ''); }
+
+  function parseBookmarks(text) {
+    var re = /<H3[^>]*>([\s\S]*?)<\/H3>|<A\s+[^>]*HREF="([^"]*)"[^>]*>([\s\S]*?)<\/A>|(<\/DL>)/gi;
+    var stack = [], out = [], m, url;
+    while ((m = re.exec(text)) !== null) {
+      if (m[1] !== undefined) stack.push(stripTags(m[1]));
+      else if (m[4] !== undefined) stack.pop();
+      else {
+        url = decode(m[2] || '').trim();
+        if (!/^https?:\/\//i.test(url)) continue;
+        out.push({
+          title: stripTags(m[3]) || url,
+          url: url,
+          folder: stack.length ? stack[stack.length - 1] : ''
+        });
+      }
+    }
+    return out;
+  }
+
+  function bmId(url) {
+    var m = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(url);
+    if (m) return m[1].toLowerCase();
+    var a = 0x811c9dc5, b = 0x811c9dc5, i;
+    for (i = 0; i < url.length; i++) { a ^= url.charCodeAt(i); a = (a * 0x01000193) >>> 0; }
+    for (i = url.length - 1; i >= 0; i--) { b ^= url.charCodeAt(i); b = (b * 0x01000193) >>> 0; }
+    return 'bm-' + ('0000000' + a.toString(16)).slice(-8) + ('000' + (b % 65536).toString(16)).slice(-4);
+  }
+
+  function loadBookmarks(file) {
+    var r = new FileReader();
+    r.onerror = function () { mark('파일을 읽지 못했습니다. 즐겨찾기 내보내기로 만든 HTML인지 확인해 주세요.', 'err'); render(); };
+    r.onload = function () {
+      var marks = parseBookmarks(String(r.result || '')), i, id, key;
+      var ids = {}, urls = {}, tomb = {}, seen = {}, rows = [];
+      for (i = 0; i < S.items.length; i++) {
+        ids[String(S.items[i].id).toLowerCase()] = 1;
+        urls[normUrl(S.items[i].url)] = 1;
+      }
+      for (i = 0; i < S.tombstones.length; i++) tomb[String(S.tombstones[i]).toLowerCase()] = 1;
+      for (i = 0; i < marks.length; i++) {
+        id = bmId(marks[i].url); key = normUrl(marks[i].url);
+        if (seen[key]) continue;
+        seen[key] = 1;
+        var dup = !!(ids[id] || urls[key] || tomb[id] || id === String(S.selfId || '').toLowerCase());
+        rows.push({ title: marks[i].title, url: marks[i].url, folder: marks[i].folder,
+                    id: id, dup: dup, sel: false });
+      }
+      if (!rows.length) {
+        ui.imp = null;
+        mark('이 파일에서 웹 주소를 찾지 못했습니다.', 'warn');
+      } else {
+        ui.imp = { name: file.name, rows: rows, folder: 'all' };
+        mark(null);
+      }
+      render();
+    };
+    r.readAsText(file);
+  }
+
+  function impSelected() {
+    var n = 0, i;
+    if (!ui.imp) return 0;
+    for (i = 0; i < ui.imp.rows.length; i++) if (!ui.imp.rows[i].dup && ui.imp.rows[i].sel) n++;
+    return n;
+  }
+  function impCountRefresh() {
+    var n = impSelected();
+    var btn = root.querySelector('[data-act="impadd"]');
+    var cnt = root.querySelector('.imp-sel-count');
+    if (btn) { btn.textContent = '선택한 ' + n + '건 추가'; btn.disabled = !n; }
+    if (cnt) cnt.textContent = n;
+  }
+  function impFolderOf(r) { return r.folder || '(폴더 없음)'; }
+  function impVisible(r) { return ui.imp.folder === 'all' || impFolderOf(r) === ui.imp.folder; }
+
+  function importPanel() {
+    var im = ui.imp, i, r, f;
+    var folders = [], counts = {}, tot = 0, dup = 0;
+    for (i = 0; i < im.rows.length; i++) {
+      r = im.rows[i]; tot++;
+      if (r.dup) dup++;
+      f = impFolderOf(r);
+      if (!Object.prototype.hasOwnProperty.call(counts, f)) { counts[f] = 0; folders.push(f); }
+      counts[f]++;
+    }
+    var out = '<div class="imp"><div class="imp-hd"><h2>즐겨찾기 가져오기</h2>' +
+      '<span class="imp-file">' + esc(im.name) + '</span></div>' +
+      '<p class="note">파일은 이 브라우저 안에서만 읽습니다 — 어디에도 올라가지 않습니다. ' +
+      '폴더를 고른 뒤 <b>보이는 항목 모두 선택</b>을 누르거나, 넣을 항목만 하나씩 체크하세요.</p>';
+    out += '<dl class="stats imp-stats">' +
+      '<div class="stat"><dt>파일 안</dt><dd>' + tot + '</dd></div>' +
+      '<div class="stat"><dt>새 항목</dt><dd>' + (tot - dup) + '</dd></div>' +
+      '<div class="stat"><dt>이미 등록</dt><dd>' + dup + '</dd></div>' +
+      '<div class="stat is-alert"><dt>선택(전체)</dt><dd class="imp-sel-count">' + impSelected() + '</dd></div>' +
+      '</dl>';
+    out += '<div class="chips imp-chips"><button class="chip" type="button" data-act="impfolder" data-v="all"' +
+      ' aria-pressed="' + (im.folder === 'all') + '">전체<span class="n">' + tot + '</span></button>';
+    for (i = 0; i < folders.length; i++) {
+      out += '<button class="chip" type="button" data-act="impfolder" data-v="' + esc(folders[i]) + '"' +
+        ' aria-pressed="' + (im.folder === folders[i]) + '">' + esc(folders[i]) +
+        '<span class="n">' + counts[folders[i]] + '</span></button>';
+    }
+    out += '</div>';
+    out += '<div class="imp-tools">' +
+      '<button class="btn btn-sm" type="button" data-act="impall">보이는 항목 모두 선택</button>' +
+      '<button class="btn btn-sm" type="button" data-act="impnone">보이는 항목 선택 해제</button>' +
+      '<button class="btn btn-sm" type="button" data-act="impclear">전체 선택 해제</button></div>';
+    out += '<div class="imp-list">';
+    for (i = 0; i < im.rows.length; i++) {
+      r = im.rows[i];
+      if (!impVisible(r)) continue;
+      out += '<div class="imp-row' + (r.dup ? ' dup' : '') + '">' +
+        '<input type="checkbox" data-act="imptoggle" data-i="' + i + '"' +
+          (r.sel && !r.dup ? ' checked' : '') + (r.dup ? ' disabled' : '') +
+          ' aria-label="' + esc(r.title) + '">' +
+        '<div><div class="imp-t">' + esc(r.title) + '</div>' +
+        '<div class="imp-u">' + esc(r.url) + '</div></div>' +
+        '<div class="imp-side">' + (r.folder ? '<span class="imp-f">' + esc(r.folder) + '</span>' : '') +
+        (r.dup ? '<span class="flag flag-hide">이미 등록</span>' : '') + '</div></div>';
+    }
+    out += '</div>';
+    out += '<div class="rowbtns">' +
+      '<button class="btn btn-primary btn-sm" type="button" data-act="impadd"' +
+        (impSelected() ? '' : ' disabled') + '>선택한 ' + impSelected() + '건 추가</button>' +
+      '<button class="btn btn-sm" type="button" data-act="impcancel">취소</button></div>';
+    return out + '</div>';
+  }
+
   function adminPanel() {
     var out = '<div class="adm">';
     out += '<p class="note">숨김·분류·설명은 여기서 바꾸고 <b>저장</b>을 눌러야 모두에게 반영됩니다.</p>';
     out += '<label class="toggle"><input type="checkbox" data-act="showhidden"' + (ui.showHidden ? ' checked' : '') +
       '> 숨긴 항목도 보기</label>';
     out += '<button class="btn btn-sm" type="button" data-act="addform">＋ 대시보드 추가</button>';
+    out += '<label class="btn btn-sm imp-open">즐겨찾기 가져오기' +
+      '<input type="file" accept=".html,.htm,text/html" data-act="bmfile"></label>';
     out += '<button class="btn btn-primary btn-sm" type="button" data-act="save"' +
       (dirty && !saving ? '' : ' disabled') + '>' + (saving ? '저장 중…' : (dirty ? '저장' : '저장됨')) + '</button>';
     if (msg) out += '<span class="status ' + esc(msg.cls) + '">' + esc(msg.text) + '</span>';
@@ -385,6 +555,7 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
         '<button class="btn btn-sm" type="button" data-act="addcancel">취소</button></div>' +
         '</div></div>';
     }
+    if (ui.imp) out += importPanel();
     return out;
   }
 
@@ -492,6 +663,15 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     var t = e.target, act = t.getAttribute('data-act');
     if (act === 'sort') { ui.sort = t.value; pref('sort', ui.sort); render(); }
     else if (act === 'showhidden') { ui.showHidden = t.checked; render(); }
+    else if (act === 'bmfile') {
+      var file = t.files && t.files[0];
+      if (file) loadBookmarks(file);
+      t.value = '';
+    }
+    else if (act === 'imptoggle') {
+      var idx = parseInt(t.getAttribute('data-i'), 10);
+      if (ui.imp && ui.imp.rows[idx]) { ui.imp.rows[idx].sel = t.checked; impCountRefresh(); }
+    }
   });
 
   root.addEventListener('click', function (e) {
@@ -502,8 +682,36 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     var it = li ? byId(li.getAttribute('data-id')) : null;
 
     if (act === 'cat') { ui.cat = t.getAttribute('data-v'); pref('cat', ui.cat); render(); }
-    else if (act === 'admin') { ui.admin = !ui.admin; ui.edit = null; ui.adding = false; mark(null); render(); }
+    else if (act === 'admin') { ui.admin = !ui.admin; ui.edit = null; ui.adding = false; ui.imp = null; mark(null); render(); }
     else if (act === 'addform') { ui.adding = !ui.adding; render(); }
+    else if (act === 'impfolder' && ui.imp) { ui.imp.folder = t.getAttribute('data-v'); render(); }
+    else if (act === 'impcancel') { ui.imp = null; render(); }
+    else if ((act === 'impall' || act === 'impnone' || act === 'impclear') && ui.imp) {
+      var on = act === 'impall', k;
+      for (k = 0; k < ui.imp.rows.length; k++) {
+        if (ui.imp.rows[k].dup) continue;
+        if (act === 'impclear') ui.imp.rows[k].sel = false;
+        else if (impVisible(ui.imp.rows[k])) ui.imp.rows[k].sel = on;
+      }
+      render();
+    }
+    else if (act === 'impadd' && ui.imp) {
+      var added = 0, q;
+      for (q = 0; q < ui.imp.rows.length; q++) {
+        var row = ui.imp.rows[q];
+        if (row.dup || !row.sel) continue;
+        S.items.push({
+          id: row.id, url: row.url, title: row.title, icon: '▤', cat: 'unsorted', desc: '',
+          tags: row.folder ? [row.folder] : [], updated: today(), added: today(),
+          hidden: false, pinned: false, status: 'new', titleLocked: true
+        });
+        added++;
+      }
+      ui.imp = null;
+      if (added) { touch(); mark(added + '건을 목록에 넣었습니다. 저장을 눌러 반영하세요.', 'ok'); }
+      else mark('선택한 항목이 없습니다.', 'warn');
+      render();
+    }
     else if (act === 'addcancel') { ui.adding = false; render(); }
     else if (act === 'save') { save(); }
     else if (act === 'restore') {
