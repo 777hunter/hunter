@@ -67,3 +67,33 @@ Claude 세션에서 이 순서로 실행합니다. (정기 실행으로 걸어 �
 `대시보드 총괄 허브 주간 동기화` — 변경이 없으면 아무것도 하지 않고, 새 대시보드가 있을
 때만 허브를 다시 발행하고 커밋합니다. 주기를 바꾸거나 끄려면 claude.ai의 Routines에서
 수정하면 됩니다.
+
+## 즐겨찾기에 있는 대시보드 가져오기
+
+사내 시스템(VTS/VKS 등)이나 일반 대화에서 만든 대시보드는 Claude 아티팩트 갤러리에
+잡히지 않아 주간 동기화로는 들어오지 않습니다. 브라우저 즐겨찾기를 통째로 가져오면 됩니다.
+
+1. 크롬/엣지/웨일에서 **즐겨찾기 관리 → ⋮ → 즐겨찾기 내보내기** 로 HTML 파일을 저장합니다.
+2. 어떤 폴더가 있는지 봅니다.
+
+   ```bash
+   python3 dashboards/import_bookmarks.py --html dashboards/hub.html \
+     --bookmarks bookmarks.html --list-folders
+   ```
+
+3. 가져올 폴더만 골라 미리 확인하고(`--dry-run`), 실제로 넣습니다.
+
+   ```bash
+   python3 dashboards/import_bookmarks.py --html dashboards/hub.html \
+     --bookmarks bookmarks.html --folder "VTS 자동대시보드" \
+     --out dashboards/hub.html --registry dashboards/registry.json
+   ```
+
+4. 허브를 다시 발행하고 커밋합니다.
+
+이미 등록된 항목은 주소(아티팩트면 아티팩트 id)로 알아보고 건너뜁니다. `--folder` 를 빼면
+파일 안의 모든 즐겨찾기를 가져오므로, 대시보드가 아닌 링크까지 섞이지 않게 폴더를 지정하는
+편이 좋습니다. 즐겨찾기 폴더 이름은 태그로 남으니 나중에 분류하기 쉽습니다.
+
+가져온 항목 중 claude 아티팩트가 아닌 것은 `bm-` 로 시작하는 id를 받아, 주간 동기화가
+건드리지 않고 그대로 유지됩니다.
