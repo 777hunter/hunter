@@ -117,6 +117,7 @@ def analyse_video(
     stride: int = 1,
     max_frames: int | None = None,
     min_confidence: float = 0.5,
+    keep_frames: bool = True,
     progress: bool = True,
 ):
     """Yield (meta, frames). Runs the landmarker in VIDEO mode."""
@@ -166,7 +167,8 @@ def analyse_video(
                 f.angles = _angles_from(f.world, f.px)
                 f.torso_lean = _torso_lean(f.px)
             frames.append(f)
-            raw_frames.append(bgr)
+            if keep_frames:
+                raw_frames.append(bgr)
             kept += 1
             if progress and kept % 60 == 0:
                 print(f"[pose] {kept} frames processed")

@@ -99,7 +99,7 @@ def main():
 
     meta, frames, raw = analyse_video(
         args.video, model, stride=args.stride, max_frames=args.max_frames,
-        min_confidence=args.min_confidence,
+        min_confidence=args.min_confidence, keep_frames=args.annotate,
     )
     if not frames:
         raise SystemExit("no frames decoded")
