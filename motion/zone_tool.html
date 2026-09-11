@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작업영역 정의 도구</title>
+<style>
+  :root{
+    --ground:#f3f4f1; --surface:#fff; --ink:#151a19; --ink-2:#4a524f; --ink-3:#767f7b;
+    --rule:#d6dad4; --accent:#1e4f52; --accent-soft:#dee9e7; --warn:#a2661f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:14px/1.6 "IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif}
+  header{background:var(--surface);border-bottom:1px solid var(--rule);padding:14px 20px}
+  h1{margin:0;font-size:17px;font-weight:600}
+  header p{margin:4px 0 0;font-size:12.5px;color:var(--ink-3)}
+  main{display:grid;grid-template-columns:1fr 340px;gap:16px;padding:16px;align-items:start}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  .stage{background:var(--surface);border:1px solid var(--rule);padding:12px}
+  canvas{display:block;width:100%;height:auto;background:#e9ebe7;cursor:crosshair;touch-action:none}
+  .panel{background:var(--surface);border:1px solid var(--rule);padding:16px;display:grid;gap:14px}
+  .panel h2{margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  button{font:inherit;padding:7px 12px;border:1px solid var(--rule);background:var(--surface);
+    color:var(--ink);cursor:pointer;border-radius:2px}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  input[type=text],select{font:inherit;padding:6px 8px;border:1px solid var(--rule);background:var(--surface);
+    color:var(--ink);width:100%;border-radius:2px}
+  input[type=range]{width:100%}
+  label.f{display:grid;gap:4px;font-size:12px;color:var(--ink-3)}
+  ul{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:280px;overflow:auto}
+  li{border:1px solid var(--rule);padding:8px 10px;cursor:pointer;display:flex;gap:8px;align-items:center}
+  li.sel{border-color:var(--accent);background:var(--accent-soft)}
+  li .sw{width:12px;height:12px;flex:0 0 auto;border-radius:2px}
+  li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  li .ct{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .hint{font-size:12.5px;color:var(--ink-3);line-height:1.55}
+  .warn{color:var(--warn)}
+  .file{font-size:12px}
+  video{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>작업영역 정의 도구</h1>
+  <p>영상에서 프레임을 하나 고르고 부품박스·지그·공구걸이 위치를 사각형으로 표시한다.
+     여기서 만든 zones.json 으로 작업요소에 이름이 붙는다.</p>
+</header>
+
+<main>
+  <div class="stage">
+    <canvas id="cv" width="960" height="540"></canvas>
+    <video id="vid" playsinline muted></video>
+    <p class="hint" style="margin:10px 0 0" id="status">먼저 영상이나 이미지를 불러온다.</p>
+  </div>
+
+  <div class="panel">
+    <div>
+      <h2>1. 배경 프레임</h2>
+      <div class="row" style="margin-top:8px">
+        <input class="file" type="file" id="media" accept="video/*,image/*">
+      </div>
+      <div id="scrubWrap" hidden style="margin-top:10px">
+        <input type="range" id="scrub" min="0" max="100" value="0" step="0.1">
+        <div class="row" style="justify-content:space-between">
+          <span class="hint" id="tpos">0.00s</span>
+          <button id="useFrame">이 프레임 사용</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h2>2. 요소 위치 겹쳐보기 (선택)</h2>
+      <div class="row" style="margin-top:8px">
+        <input class="file" type="file" id="csv" accept=".csv">
+      </div>
+      <p class="hint" id="csvInfo">build_standard.py 가 만든 *_elements.csv 를 넣으면
+        손이 실제로 집고 놓은 지점이 점으로 찍힌다. 그 뭉치를 감싸게 존을 그리면 된다.</p>
+    </div>
+
+    <div>
+      <h2>3. 존 그리기</h2>
+      <p class="hint">캔버스에서 드래그하면 사각형이 하나 생긴다. 목록에서 골라 이름을 고친다.</p>
+      <ul id="list"></ul>
+      <div id="editor" hidden style="display:grid;gap:8px;margin-top:10px">
+        <label class="f">이름<input type="text" id="zname" placeholder="부품박스 A"></label>
+        <label class="f">종류
+          <select id="zkind">
+            <option value="part">부품 — 집어오는 곳</option>
+            <option value="jig">지그 — 조립·가공하는 곳</option>
+            <option value="tool">공구 — 공구를 집는 곳</option>
+            <option value="output">배출 — 완성품 놓는 곳</option>
+            <option value="inspect">검사 — 확인하는 곳</option>
+            <option value="other">기타</option>
+          </select>
+        </label>
+        <label class="f">품명 (선택)<input type="text" id="zitem" placeholder="브래킷"></label>
+        <div class="row"><button id="del">이 존 삭제</button></div>
+      </div>
+    </div>
+
+    <div>
+      <h2>4. 내보내기</h2>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" id="save" disabled>zones.json 저장</button>
+        <button id="loadBtn">불러오기</button>
+        <input type="file" id="loadJson" accept=".json" hidden>
+      </div>
+      <p class="hint" id="saveHint"></p>
+    </div>
+  </div>
+</main>
+
+<script>
+const PALETTE = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3","#937860","#DA8BC3","#CCB974"];
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const vid = document.getElementById("vid");
+let bg = null, bgW = 960, bgH = 540;
+let zones = [], sel = -1, seq = 0;
+let points = { grasp: [], release: [] };
+let drag = null, sourceName = "";
+
+function status(msg, warn){ const el = document.getElementById("status");
+  el.textContent = msg; el.className = warn ? "hint warn" : "hint"; }
+
+function fit(){
+  const maxW = 1280;
+  const scale = Math.min(1, maxW / bgW);
+  cv.width = Math.round(bgW * scale); cv.height = Math.round(bgH * scale);
+}
+
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if (bg) ctx.drawImage(bg, 0, 0, cv.width, cv.height);
+  else { ctx.fillStyle = "#e9ebe7"; ctx.fillRect(0,0,cv.width,cv.height); }
+
+  const dot = (list, colour) => {
+    ctx.fillStyle = colour;
+    for (const p of list){
+      ctx.beginPath(); ctx.arc(p[0]*cv.width, p[1]*cv.height, 4, 0, Math.PI*2); ctx.fill();
+    }
+  };
+  dot(points.grasp, "rgba(209,73,91,.85)");
+  dot(points.release, "rgba(244,162,97,.9)");
+
+  zones.forEach((z, i) => {
+    const c = PALETTE[i % PALETTE.length];
+    const x = z.rect[0]*cv.width, y = z.rect[1]*cv.height;
+    const w = (z.rect[2]-z.rect[0])*cv.width, h = (z.rect[3]-z.rect[1])*cv.height;
+    ctx.lineWidth = i === sel ? 3 : 2;
+    ctx.strokeStyle = c; ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = c + "22"; ctx.fillRect(x, y, w, h);
+    const label = z.name || "이름 없음";
+    ctx.font = "600 13px 'IBM Plex Sans KR', system-ui, sans-serif";
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = c; ctx.fillRect(x, Math.max(y-20, 0), tw+12, 20);
+    ctx.fillStyle = "#fff"; ctx.fillText(label, x+6, Math.max(y-6, 14));
+  });
+
+  if (drag){
+    ctx.setLineDash([5,4]); ctx.strokeStyle = "#1e4f52"; ctx.lineWidth = 2;
+    ctx.strokeRect(drag.x0, drag.y0, drag.x1-drag.x0, drag.y1-drag.y0);
+    ctx.setLineDash([]);
+  }
+}
+
+function renderList(){
+  const ul = document.getElementById("list");
+  ul.innerHTML = "";
+  zones.forEach((z, i) => {
+    const li = document.createElement("li");
+    li.className = i === sel ? "sel" : "";
+    li.innerHTML = `<span class="sw" style="background:${PALETTE[i%PALETTE.length]}"></span>
+      <span class="nm">${(z.name||"이름 없음")} <span class="ct">· ${z.kind}</span></span>`;
+    li.onclick = () => { sel = i; sync(); };
+    ul.appendChild(li);
+  });
+  document.getElementById("save").disabled = zones.length === 0;
+  document.getElementById("saveHint").textContent =
+    zones.length ? `존 ${zones.length}개. build_standard.py --zones zones.json 으로 쓴다.` : "";
+}
+
+function sync(){
+  const ed = document.getElementById("editor");
+  ed.hidden = sel < 0;
+  if (sel >= 0){
+    const z = zones[sel];
+    document.getElementById("zname").value = z.name || "";
+    document.getElementById("zkind").value = z.kind;
+    document.getElementById("zitem").value = z.item || "";
+  }
+  renderList(); draw();
+}
+
+for (const [id, key] of [["zname","name"],["zkind","kind"],["zitem","item"]]){
+  document.getElementById(id).addEventListener("input", e => {
+    if (sel < 0) return;
+    zones[sel][key] = e.target.value; renderList(); draw();
+  });
+}
+document.getElementById("del").onclick = () => {
+  if (sel < 0) return; zones.splice(sel,1); sel = -1; sync();
+};
+
+const pos = e => {
+  const r = cv.getBoundingClientRect();
+  return [ (e.clientX-r.left) * cv.width / r.width, (e.clientY-r.top) * cv.height / r.height ];
+};
+cv.addEventListener("pointerdown", e => {
+  const [x,y] = pos(e); drag = {x0:x, y0:y, x1:x, y1:y}; cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointermove", e => {
+  if (!drag) return; const [x,y] = pos(e); drag.x1 = x; drag.y1 = y; draw();
+});
+cv.addEventListener("pointerup", () => {
+  if (!drag) return;
+  const x0 = Math.min(drag.x0, drag.x1)/cv.width, x1 = Math.max(drag.x0, drag.x1)/cv.width;
+  const y0 = Math.min(drag.y0, drag.y1)/cv.height, y1 = Math.max(drag.y0, drag.y1)/cv.height;
+  drag = null;
+  if ((x1-x0) < 0.02 || (y1-y0) < 0.02){ draw(); return; }
+  seq += 1;
+  zones.push({ id:"z"+seq, name:"영역 "+seq, kind:"part", item:"",
+               rect:[+x0.toFixed(4), +y0.toFixed(4), +x1.toFixed(4), +y1.toFixed(4)] });
+  sel = zones.length-1; sync();
+});
+
+document.getElementById("media").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  sourceName = f.name;
+  const url = URL.createObjectURL(f);
+  if (f.type.startsWith("video")){
+    vid.src = url;
+    vid.onloadedmetadata = () => {
+      bgW = vid.videoWidth; bgH = vid.videoHeight; fit();
+      document.getElementById("scrubWrap").hidden = false;
+      if (!bgW || !bgH){ vid.onerror(); return; }
+      const sc = document.getElementById("scrub");
+      sc.max = vid.duration; sc.value = Math.min(1, vid.duration/2); sc.step = 1/30;
+      vid.currentTime = +sc.value;
+      status(`영상 ${bgW}x${bgH}, ${vid.duration.toFixed(1)}초. 슬라이더로 프레임을 고른다.`);
+    };
+    vid.onerror = () => {
+      document.getElementById("scrubWrap").hidden = true;
+      status("이 영상은 브라우저가 재생하지 못한다(코덱 문제). "
+        + "python motion/grab_frame.py " + f.name + " --out frame.png 으로 프레임을 뽑아 "
+        + "이미지로 불러올 것.", true);
+    };
+    vid.onseeked = () => {
+      document.getElementById("tpos").textContent = vid.currentTime.toFixed(2)+"s";
+      grabFrame();
+    };
+  } else {
+    const img = new Image();
+    img.onload = () => { bg = img; bgW = img.width; bgH = img.height; fit();
+      status(`이미지 ${bgW}x${bgH}`); draw(); };
+    img.src = url;
+  }
+};
+document.getElementById("scrub").oninput = e => { vid.currentTime = +e.target.value; };
+document.getElementById("useFrame").onclick = () => { grabFrame(); status("이 프레임으로 고정했다."); };
+
+function grabFrame(){
+  const off = document.createElement("canvas");
+  off.width = bgW; off.height = bgH;
+  off.getContext("2d").drawImage(vid, 0, 0, bgW, bgH);
+  const img = new Image();
+  img.onload = () => { bg = img; draw(); };
+  img.src = off.toDataURL("image/jpeg", 0.85);
+}
+
+document.getElementById("csv").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(txt => {
+    const lines = txt.trim().split(/\r?\n/);
+    const head = lines[0].split(",").map(s => s.trim());
+    const gi = [head.indexOf("grasp_x"), head.indexOf("grasp_y")];
+    const ri = [head.indexOf("release_x"), head.indexOf("release_y")];
+    if (gi[0] < 0){ document.getElementById("csvInfo").textContent =
+      "grasp_x 열이 없다. build_standard.py 가 만든 *_elements.csv 인지 확인할 것."; return; }
+    points = { grasp: [], release: [] };
+    for (const line of lines.slice(1)){
+      const c = line.split(",");
+      const g = [parseFloat(c[gi[0]]), parseFloat(c[gi[1]])];
+      const r = [parseFloat(c[ri[0]]), parseFloat(c[ri[1]])];
+      if (isFinite(g[0]) && isFinite(g[1])) points.grasp.push(g);
+      if (isFinite(r[0]) && isFinite(r[1])) points.release.push(r);
+    }
+    document.getElementById("csvInfo").textContent =
+      `집은 지점 ${points.grasp.length}개(붉은색), 놓은 지점 ${points.release.length}개(주황색).`;
+    draw();
+  });
+};
+
+document.getElementById("save").onclick = () => {
+  const doc = { video: sourceName, frame_size: [bgW, bgH],
+                created: new Date().toISOString().slice(0,19), zones };
+  const blob = new Blob([JSON.stringify(doc, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "zones.json"; a.click();
+};
+document.getElementById("loadBtn").onclick = () => document.getElementById("loadJson").click();
+document.getElementById("loadJson").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(t => {
+    const doc = JSON.parse(t);
+    zones = doc.zones || [];
+    seq = zones.length;
+    if (doc.frame_size){ bgW = doc.frame_size[0]; bgH = doc.frame_size[1]; fit(); }
+    sel = zones.length ? 0 : -1; sync();
+    status(`존 ${zones.length}개를 불러왔다.`);
+  });
+};
+
+fit(); draw(); renderList();
+</script>
+</body>
+</html>

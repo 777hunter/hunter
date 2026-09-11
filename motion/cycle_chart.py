@@ -68,7 +68,8 @@ def render_cycles(std: dict, cycles, path: str, title: str = "사이클 정합")
     acc, blocks = 0.0, []
     for s in std["standard"]:
         blocks.append((acc, acc + s["median_s"], s["position"] - 1,
-                       f'{s["position"]}번 · 중앙값 {s["median_s"]}초 · IQR {s["iqr_s"]}초', False))
+                       f'{s["position"]}번 {s.get("name") or s["signature"]} · '
+                       f'중앙값 {s["median_s"]}초 · IQR {s["iqr_s"]}초', False))
         acc += s["median_s"]
     band(y, "표준(중앙값)", blocks, bold=True)
     y += row_h + gap + 4
@@ -89,8 +90,9 @@ def render_cycles(std: dict, cycles, path: str, title: str = "사이클 정합")
         p.append(f'<rect x="{cx}" y="{cy}" width="11" height="11" '
                  f'fill="{POS_COLOURS[i % len(POS_COLOURS)]}"/>')
         flag = (" · " + ", ".join(s["flags"])) if s["flags"] else ""
+        title = s.get("name") or s["signature"]
         p.append(f'<text x="{cx + 17}" y="{cy + 10}" font-size="10.5" fill="#444">'
-                 f'{s["position"]}. {_esc(s["signature"])} · {s["median_s"]}s{_esc(flag)}</text>')
+                 f'{s["position"]}. {_esc(title)} · {s["median_s"]}s{_esc(flag)}</text>')
     p.append("</svg>")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(p))

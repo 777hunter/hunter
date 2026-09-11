@@ -26,6 +26,7 @@ class Element:
     position: int | None = None
     out_of_order: bool = False
     name: str | None = None
+    zone_info: dict | None = None
 
     @property
     def dur_s(self) -> float:
@@ -42,7 +43,11 @@ class Element:
                 "end_s": round(self.end_s, 2), "dur_s": self.dur_s,
                 "signature": self.signature, "support": ">".join(self.sup_seq),
                 "grasp_xy": None if self.grasp_xy is None else [round(v, 3) for v in self.grasp_xy],
-                "release_xy": None if self.release_xy is None else [round(v, 3) for v in self.release_xy]}
+                "release_xy": None if self.release_xy is None else [round(v, 3) for v in self.release_xy],
+                "grasp_zone": (self.zone_info or {}).get("grasp_zone"),
+                "release_zone": (self.zone_info or {}).get("release_zone"),
+                "reach": (self.zone_info or {}).get("reach"),
+                "notes": (self.zone_info or {}).get("notes", [])}
 
 
 def dominant_hand(per_side: dict) -> str:
@@ -288,6 +293,8 @@ def build_standard(cycles: list[list[Element]], F: np.ndarray, elements: list[El
         durs = [e.dur_s for e in present]
         sigs = [e.signature for e in present]
         mode_sig = max(set(sigs), key=sigs.count) if sigs else ""
+        names = [e.name for e in present if e.name]
+        mode_name = max(set(names), key=names.count) if names else None
         median = float(np.median(durs)) if durs else 0.0
         iqr = _iqr(durs)
         flags = []
@@ -305,8 +312,12 @@ def build_standard(cycles: list[list[Element]], F: np.ndarray, elements: list[El
                                "detail": f"IQR/중앙값 {iqr / median:.2f}"})
         if sigs and sigs.count(mode_sig) / len(sigs) < 0.8:
             flags.append("동작구성 불일치")
+        reaches = [e.zone_info["reach"] for e in present
+                   if e.zone_info and e.zone_info.get("reach") is not None]
+        if reaches and float(np.median(reaches)) > 0.5:
+            flags.append("장거리 이동")
         standard.append({
-            "position": pos + 1, "signature": mode_sig,
+            "position": pos + 1, "name": mode_name, "signature": mode_sig,
             "median_s": round(median, 2), "iqr_s": round(iqr, 2),
             "min_s": round(min(durs), 2) if durs else None,
             "max_s": round(max(durs), 2) if durs else None,
