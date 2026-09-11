@@ -14,19 +14,10 @@ import os
 import cv2
 import numpy as np
 
-from hand_core import HAND_CONNECTIONS, analyse_hands, ensure_hand_model
+from hand_core import HAND_CONNECTIONS
+from pipeline import SIDES, run_therblig
 from simo import render_simo
-from therblig import (
-    THERBLIGS,
-    Config,
-    build_segments,
-    compute_signals,
-    config_dict,
-    label_frames,
-    summarise,
-)
-
-SIDES = ("Left", "Right")
+from therblig import THERBLIGS, Config, config_dict
 
 
 def bgr(hex_colour: str):
@@ -110,27 +101,13 @@ def main():
 
     cfg = Config(**{k: getattr(args, k) for k in config_dict(cfg_default)})
     os.makedirs(args.out_dir, exist_ok=True)
-    model = ensure_hand_model(args.model)
 
-    meta, frames, raw = analyse_hands(
-        args.video, model, num_hands=2, stride=args.stride, max_frames=args.max_frames,
-        min_confidence=args.min_confidence, swap_hands=args.swap_hands,
-        keep_frames=args.annotate,
-    )
-    if not frames:
-        raise SystemExit("no frames decoded")
-
-    times = np.array([f.time_s for f in frames])
-    fps = meta["effective_fps"]
-    sigs, labels, per_side = {}, {}, {}
-    for side in SIDES:
-        sigs[side] = compute_signals(frames, side, fps, cfg)
-        labels[side] = label_frames(sigs[side], fps, cfg)
-        per_side[side] = build_segments(labels[side], times, cfg)
-
-    summary = summarise(per_side, times)
-    summary["meta"] = meta
-    summary["config"] = config_dict(cfg)
+    res = run_therblig(args.video, args.model, stride=args.stride, max_frames=args.max_frames,
+                       min_confidence=args.min_confidence, swap_hands=args.swap_hands,
+                       keep_frames=args.annotate, cfg=cfg)
+    meta, frames, raw = res["meta"], res["frames"], res["raw"]
+    times, sigs, labels = res["times"], res["sigs"], res["labels"]
+    summary = res["summary"]
 
     stem = os.path.splitext(os.path.basename(args.video))[0]
     out = {
