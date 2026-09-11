@@ -120,6 +120,11 @@ def main():
     std["rating"] = args.rating
     std["allowance"] = args.allowance
     std["standard_time_s"] = round(std["net_time_s"] * args.rating * (1 + args.allowance), 2)
+    hands = res["summary"].get("hands", {})
+    std["therblig"] = {
+        side: {k: v for k, v in h.items() if k != "segments"} for side, h in hands.items()
+    }
+    std["two_hand"] = res["summary"].get("two_hand")
     std["zones"] = zone_report
     std["meta"] = meta
     std["elements"] = [e.to_dict() for e in elements]

@@ -199,6 +199,46 @@ if (chartImg) {
     + "붉은 테두리와 * 는 표준 순서를 벗어난 요소다.", { size: 16, color: MUTED, before: 80 }));
 }
 
+/* ── 부록 C. 포카요케 리스크 ───────────────────────────────── */
+if ((spec.risks || []).length) {
+  body.push(new Paragraph({ children: [new PageBreak()] }));
+  body.push(para("부록 C. 포카요케 리스크 신호", { size: 24, bold: true, after: 60 }));
+  const sm = spec.risk_summary || {};
+  body.push(para(
+    sm.defect_source
+      ? `신호 ${sm.total}건 · 불량 이력이 연결된 신호 ${sm.defect_linked}건. `
+        + "키워드 매칭이므로 연결이 맞는지 한 번 확인할 것."
+      : `신호 ${sm.total}건. 불량 이력을 붙이지 않았으므로 아래 심각도는 관측 신호만 보고 `
+        + "매긴 값이다. 실제 우선순위는 불량 이력이나 공정 FMEA 를 붙여야 나온다.",
+    { size: 16, color: WARN, after: 120 }));
+
+  const rw = [1000, 2500, 2400, 3100, 2000, 4398];
+  const sevFill = { "상": "F6DFDA", "중": "F6EAD7", "하": "EDEFEA" };
+  const riskRows = [new TableRow({ tableHeader: true, children: [
+    label("심각도", rw[0]), label("신호", rw[1]), label("대상 단계", rw[2]),
+    label("근거", rw[3]), label("의심 불량 / 이력", rw[4]), label("포카요케 후보", rw[5]),
+  ] })];
+  for (const r of spec.risks) {
+    riskRows.push(new TableRow({ children: [
+      cell([para(r.severity, { bold: true, size: 18, align: AlignmentType.CENTER }),
+            para(r.id, { size: 13, color: MUTED, align: AlignmentType.CENTER })],
+           { width: rw[0], fill: sevFill[r.severity] || HEAD_BG }),
+      cell(para(r.signal, { size: 17, bold: true }), { width: rw[1] }),
+      cell(para(r.target, { size: 16 }), { width: rw[2] }),
+      cell([para(r.evidence, { size: 16 }),
+            ...(r.needs ? [para(r.needs, { size: 14, color: WARN, italics: true })] : [])],
+           { width: rw[3] }),
+      cell([para(r.suspect, { size: 16 }),
+            ...(r.defects ? [para(r.defects, { size: 16, bold: true, color: WARN })] : [])],
+           { width: rw[4] }),
+      cell(r.measures.map((m) => para("· " + m, { size: 16 })), { width: rw[5] }),
+    ] }));
+  }
+  body.push(table(riskRows, rw));
+  body.push(para("채택 여부와 투자 판단은 사람이 한다. 이 표는 영상에서 나온 신호와 "
+    + "일반적인 대책 후보를 짝지어 놓은 것이다.", { size: 15, color: MUTED, before: 100 }));
+}
+
 /* ── 미기입 체크리스트와 서명 ──────────────────────────────── */
 body.push(new Paragraph({ children: [new PageBreak()] }));
 body.push(para("승인 전 채워야 할 항목", { size: 24, bold: true, after: 100 }));

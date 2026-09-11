@@ -43,6 +43,7 @@ def main():
     ap.add_argument("--standard", required=True)
     ap.add_argument("--shots", default=None)
     ap.add_argument("--review", default=None, help="review_tool.html 로 만든 review.json")
+    ap.add_argument("--risks", default=None, help="find_risks.py 가 만든 *_risks.json")
     ap.add_argument("--shot-dir", default=None,
                     help="사진 폴더 (기본: shots.json 옆의 shots/)")
     ap.add_argument("--out-dir", default="standard_out")
@@ -66,6 +67,10 @@ def main():
     if args.shots and os.path.exists(args.shots):
         with open(args.shots, encoding="utf-8") as fh:
             shots = json.load(fh)
+    risks = None
+    if args.risks and os.path.exists(args.risks):
+        with open(args.risks, encoding="utf-8") as fh:
+            risks = json.load(fh)
     review = None
     if args.review:
         with open(args.review, encoding="utf-8") as fh:
@@ -90,7 +95,8 @@ def main():
     shot_dir = args.shot_dir
     if not shot_dir and args.shots:
         shot_dir = os.path.join(os.path.dirname(os.path.abspath(args.shots)), "shots")
-    spec = build_spec(std, shots, header, args.out_dir, review=review, shot_dir=shot_dir)
+    spec = build_spec(std, shots, header, args.out_dir, review=review,
+                      shot_dir=shot_dir, risks=risks)
     spec_path = os.path.join(args.out_dir, f"{stem}_ji_spec.json")
     with open(spec_path, "w", encoding="utf-8") as fh:
         json.dump(spec, fh, indent=2, ensure_ascii=False)
@@ -109,6 +115,12 @@ def main():
         print(f"    ☐ {b}")
     if len(spec["blanks"]) > 6:
         print(f"    … 외 {len(spec['blanks']) - 6}건 (문서 마지막 장에 전체 목록)")
+    if spec.get("risks"):
+        sm = spec.get("risk_summary") or {}
+        print(f'  포카요케 신호 {len(spec["risks"])}건 '
+              f'(상 {sm.get("by_severity", {}).get("상", 0)} / '
+              f'중 {sm.get("by_severity", {}).get("중", 0)} / '
+              f'하 {sm.get("by_severity", {}).get("하", 0)})')
     print(f"\nspec_json : {spec_path}\ndocx      : {out}")
 
 

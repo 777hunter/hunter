@@ -110,7 +110,8 @@ def cycle_chart_png(std: dict, path: str, font_path: str | None,
 
 
 def build_spec(std: dict, shots: dict | None, header: dict, out_dir: str,
-               review: dict | None = None, shot_dir: str | None = None) -> dict:
+               review: dict | None = None, shot_dir: str | None = None,
+               risks: dict | None = None) -> dict:
     font_path = find_font(header.get("font"))
     rev_elements = (review or {}).get("elements") or {}
     shot_by_pos = {}
@@ -214,8 +215,27 @@ def build_spec(std: dict, shots: dict | None, header: dict, out_dir: str,
         delta = secs - std["cycle_seconds"]["median"]
         cyc_rows.append({"no": i, "seconds": secs, "delta": f"{delta:+.2f}"})
 
+    # 리스크는 관측 시점 이름으로 잡혀 있다. 검수에서 이름을 고쳤으면 그쪽을 쓴다.
+    step_name = {s["no"]: s["name"] for s in steps}
+    risk_rows = []
+    for r in (risks or {}).get("risks", []):
+        risk_rows.append({
+            "id": r["id"], "severity": r["severity"], "signal": r["signal"],
+            "target": ", ".join(f'{p}. {step_name.get(p, n)}'
+                                for p, n in zip(r["positions"], r["names"])) or "공정 전체",
+            "evidence": r["evidence"],
+            "suspect": " / ".join(r["suspect"]),
+            "defects": " / ".join(f'{d["mode"]} {d["count"]}건' for d in r["defects"]),
+            "measures": [f'[{c["type"]}] {c["text"]}' for c in r["countermeasures"]],
+            "needs": r.get("needs") or "",
+        })
+    if risks and not (risks.get("summary") or {}).get("defect_source"):
+        blanks.append("포카요케 우선순위 — 불량 이력이나 공정 FMEA 를 붙여야 확정된다")
+
     return {
         "header": header,
+        "risks": risk_rows,
+        "risk_summary": (risks or {}).get("summary"),
         "observation": obs,
         "steps": steps,
         "variations": variations,

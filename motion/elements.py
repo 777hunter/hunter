@@ -28,6 +28,8 @@ class Element:
     name: str | None = None
     zone_info: dict | None = None
     moments: dict = field(default_factory=dict)
+    therblig_s: dict = field(default_factory=dict)       # 우세손 서블릭별 소요시간
+    sup_therblig_s: dict = field(default_factory=dict)   # 보조손
 
     @property
     def dur_s(self) -> float:
@@ -49,6 +51,8 @@ class Element:
                 "release_zone": (self.zone_info or {}).get("release_zone"),
                 "reach": (self.zone_info or {}).get("reach"),
                 "moments": {k: round(v, 3) for k, v in self.moments.items()},
+                "therblig_s": {k: round(v, 3) for k, v in self.therblig_s.items()},
+                "sup_therblig_s": {k: round(v, 3) for k, v in self.sup_therblig_s.items()},
                 "notes": (self.zone_info or {}).get("notes", [])}
 
 
@@ -100,6 +104,13 @@ def split_elements(per_side: dict, dom: str, frames, times: np.ndarray, meta: di
                       if s["end_s"] > start and s["start_s"] < end and s["therblig"] != "-"]
         el.sup_seq = [s["therblig"] for s in sup_segs
                       if s["end_s"] > start and s["start_s"] < end and s["therblig"] != "-"]
+
+        # 서블릭별 소요시간. 요소 경계에 걸친 구간은 겹치는 만큼만 센다.
+        for segs, bucket in ((dom_segs, el.therblig_s), (sup_segs, el.sup_therblig_s)):
+            for s in segs:
+                overlap = min(s["end_s"], end) - max(s["start_s"], start)
+                if overlap > 0:
+                    bucket[s["therblig"]] = bucket.get(s["therblig"], 0.0) + overlap
         for tag, attr in (("G", "grasp_xy"), ("RL", "release_xy")):
             hit = [s for s in dom_segs
                    if s["therblig"] == tag and s["end_s"] > start and s["start_s"] < end]
