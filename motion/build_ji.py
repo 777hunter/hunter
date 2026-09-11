@@ -42,6 +42,9 @@ def main():
     ap = argparse.ArgumentParser(description="TWI 3열 작업지도서 생성")
     ap.add_argument("--standard", required=True)
     ap.add_argument("--shots", default=None)
+    ap.add_argument("--review", default=None, help="review_tool.html 로 만든 review.json")
+    ap.add_argument("--shot-dir", default=None,
+                    help="사진 폴더 (기본: shots.json 옆의 shots/)")
     ap.add_argument("--out-dir", default="standard_out")
     ap.add_argument("--out", default=None, help="출력 .docx 경로")
     ap.add_argument("--job-name", default=None, help="작업명")
@@ -63,17 +66,31 @@ def main():
     if args.shots and os.path.exists(args.shots):
         with open(args.shots, encoding="utf-8") as fh:
             shots = json.load(fh)
+    review = None
+    if args.review:
+        with open(args.review, encoding="utf-8") as fh:
+            review = json.load(fh)
 
     stem = os.path.splitext(os.path.basename(args.standard))[0].replace("_standard", "")
     os.makedirs(args.out_dir, exist_ok=True)
+    # 검수 화면에서 입력한 값이 기본, CLI 인자를 주면 그쪽이 이긴다
+    rev_header = (review or {}).get("header") or {}
+    def pick(cli, key, fallback=""):
+        return cli or rev_header.get(key) or fallback
     header = {
-        "job_name": args.job_name or std.get("meta", {}).get("video", stem),
-        "process": args.process, "doc_no": args.doc_no, "revision": args.revision,
-        "author": args.author, "date": args.date or dt.date.today().isoformat(),
-        "equipment": args.equipment, "tooling": args.tooling, "ppe": args.ppe,
+        "job_name": pick(args.job_name, "job_name",
+                         std.get("meta", {}).get("video", stem)),
+        "process": pick(args.process, "process"), "doc_no": pick(args.doc_no, "doc_no"),
+        "revision": pick(args.revision, "revision"), "author": pick(args.author, "author"),
+        "date": args.date or dt.date.today().isoformat(),
+        "equipment": pick(args.equipment, "equipment"),
+        "tooling": pick(args.tooling, "tooling"), "ppe": pick(args.ppe, "ppe"),
         "font_name": args.font_name, "font": args.font,
     }
-    spec = build_spec(std, shots, header, args.out_dir)
+    shot_dir = args.shot_dir
+    if not shot_dir and args.shots:
+        shot_dir = os.path.join(os.path.dirname(os.path.abspath(args.shots)), "shots")
+    spec = build_spec(std, shots, header, args.out_dir, review=review, shot_dir=shot_dir)
     spec_path = os.path.join(args.out_dir, f"{stem}_ji_spec.json")
     with open(spec_path, "w", encoding="utf-8") as fh:
         json.dump(spec, fh, indent=2, ensure_ascii=False)
@@ -82,8 +99,11 @@ def main():
     render(spec_path, out)
 
     auto = sum(1 for s in spec["steps"] for k in s["key_points"] if k["source"] == "자동")
+    man = sum(1 for s in spec["steps"] for k in s["key_points"] if k["source"] == "검수")
+    done = sum(1 for s in spec["steps"] if s["reasons"])
     print(f"\n  주요단계 {len(spec['steps'])}개 · 사진 "
-          f"{sum(1 for s in spec['steps'] if s['photo'])}컷 · 급소 초안 {auto}건")
+          f"{sum(1 for s in spec['steps'] if s['photo'])}컷 · "
+          f"급소 자동 {auto}건 / 검수 {man}건 · 이유 기입 {done}/{len(spec['steps'])}")
     print(f"  채워야 할 항목 {len(spec['blanks'])}개")
     for b in spec["blanks"][:6]:
         print(f"    ☐ {b}")

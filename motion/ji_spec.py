@@ -109,19 +109,30 @@ def cycle_chart_png(std: dict, path: str, font_path: str | None,
     return path
 
 
-def build_spec(std: dict, shots: dict | None, header: dict, out_dir: str) -> dict:
+def build_spec(std: dict, shots: dict | None, header: dict, out_dir: str,
+               review: dict | None = None, shot_dir: str | None = None) -> dict:
     font_path = find_font(header.get("font"))
+    rev_elements = (review or {}).get("elements") or {}
     shot_by_pos = {}
     for entry in (shots or {}).get("positions", []):
         if entry["shots"]:
             shot_by_pos[entry["position"]] = entry["shots"][0]
-    shot_dir = os.path.join(out_dir, "shots")
+    shot_dir = shot_dir or os.path.join(out_dir, "shots")
 
     steps, blanks = [], []
     for row in std["standard"]:
         pos = row["position"]
+        rev = rev_elements.get(str(pos)) or rev_elements.get(pos) or {}
         photo = None
         s = shot_by_pos.get(pos)
+        chosen = rev.get("photo")
+        if chosen:
+            s = {"annotated": chosen, "file": chosen,
+                 "kind_ko": "검수 선택", "time_s": (s or {}).get("time_s", 0)}
+            for entry in (shots or {}).get("positions", []):
+                for cand in entry["shots"]:
+                    if cand["annotated"] == chosen or cand["file"] == chosen:
+                        s = cand
         if s:
             path = os.path.join(shot_dir, s["annotated"] or s["file"])
             if os.path.exists(path):
@@ -132,22 +143,33 @@ def build_spec(std: dict, shots: dict | None, header: dict, out_dir: str) -> dic
         if photo is None:
             blanks.append(f"{pos}번 단계 사진 없음 — 직접 촬영해 넣을 것")
 
-        kps = key_points_for(row, std)
+        if rev.get("key_points") is not None:
+            kps = [{"text": k.get("text", ""), "source": k.get("source", "검수")}
+                   for k in rev["key_points"] if (k.get("text") or "").strip()]
+            if not kps:
+                kps = [{"text": "", "source": "빈칸"}]
+        else:
+            kps = key_points_for(row, std)
         if all(k["source"] == "빈칸" for k in kps):
             blanks.append(f"{pos}번 단계 급소 — 관측에서 나온 신호가 없다. 작성자가 판단할 것")
+        if rev and rev.get("status") == "pending":
+            blanks.append(f"{pos}번 단계 — 검수 화면에서 아직 확인하지 않았다")
+        reasons = (rev.get("reasons") or "").strip()
         steps.append({
             "no": pos,
-            "name": row.get("name") or row.get("signature") or f"{pos}번 요소",
-            "auto_name": bool(row.get("name")),
+            "name": (rev.get("name") or "").strip() or row.get("name")
+                    or row.get("signature") or f"{pos}번 요소",
+            "auto_name": bool(row.get("name")) and not (rev.get("name") or "").strip(),
             "time_s": row["median_s"],
             "spread": f'{row["min_s"]}~{row["max_s"]}초' if row.get("min_s") is not None else "",
             "presence": row["presence"],
             "signature": row["signature"],
             "photo": photo,
             "key_points": kps,
-            "reasons": "",
+            "reasons": reasons,
         })
-        blanks.append(f"{pos}번 단계 '급소의 이유' — 영상에 없는 정보")
+        if not reasons:
+            blanks.append(f"{pos}번 단계 '급소의 이유' — 영상에 없는 정보")
 
     meta = std.get("meta", {})
     dom = std.get("dominant_hand")
@@ -163,6 +185,12 @@ def build_spec(std: dict, shots: dict | None, header: dict, out_dir: str) -> dic
                              for k, v in (meta.get("hand_detection_rate") or {}).items())),
         ("원본 영상", meta.get("video", "-")),
     ]
+    if review:
+        sm = review.get("summary") or {}
+        obs.append(("검수 상태",
+                    f'확인 {sm.get("confirmed", 0)}/{sm.get("total", len(std["standard"]))} · '
+                    f'이유 기입 {sm.get("reasons_filled", 0)}건'
+                    + (f' · {review.get("reviewed_at", "")}' if review.get("reviewed_at") else "")))
     if std["cycle_count"] < 5:
         blanks.append(f'관측 사이클이 {std["cycle_count"]}회뿐 — 표준으로 쓰려면 5회 이상 재촬영')
     if std.get("rating", 1.0) == 1.0:

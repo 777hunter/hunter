@@ -139,12 +139,15 @@ const stepRows = spec.steps.map((s) => {
       : para([run("· ", { size: 17, color: ACCENT }), run(k.text, { size: 17 })]));
   const kpCell = cell(kpParas, { width: COLS[3] });
 
-  const reasonCell = cell([
-    para("", { size: 17, after: 260,
-      border: { bottom: { style: BorderStyle.DOTTED, size: 4, color: "BBBBBB" } } }),
-    para("", { size: 17, after: 260,
-      border: { bottom: { style: BorderStyle.DOTTED, size: 4, color: "BBBBBB" } } }),
-  ], { width: COLS[4], fill: BLANK_BG });
+  const filled = (s.reasons || "").trim();
+  const reasonCell = filled
+    ? cell(filled.split(/\n+/).map((line) => para(line, { size: 17 })), { width: COLS[4] })
+    : cell([
+        para("", { size: 17, after: 260,
+          border: { bottom: { style: BorderStyle.DOTTED, size: 4, color: "BBBBBB" } } }),
+        para("", { size: 17, after: 260,
+          border: { bottom: { style: BorderStyle.DOTTED, size: 4, color: "BBBBBB" } } }),
+      ], { width: COLS[4], fill: BLANK_BG });
 
   return new TableRow({
     children: [
