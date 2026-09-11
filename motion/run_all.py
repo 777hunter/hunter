@@ -62,6 +62,8 @@ def main():
     ap.add_argument("--no-auto-tune", action="store_true",
                     help="사전 점검이 추천한 임계값을 쓰지 않는다")
     ap.add_argument("--force", action="store_true", help="산출물이 있어도 다시 만든다")
+    ap.add_argument("--no-next", action="store_true",
+                    help="끝에 붙는 다음 단계 안내를 숨긴다 (start.py 가 쓴다)")
     ap.add_argument("--from", dest="from_stage", choices=STAGES, default="preflight")
     ap.add_argument("--to", dest="to_stage", choices=STAGES, default="ji")
     args = ap.parse_args()
@@ -156,6 +158,8 @@ def main():
                   "`--from ji` 로 다시 돌리면 된다.")
 
     # 다음에 할 일
+    if args.no_next:
+        return
     print("\n── 다음 ───────────────────────────────")
     if not args.zones:
         print(f"1. zone_tool.html 을 브라우저에서 열고 영상과 "

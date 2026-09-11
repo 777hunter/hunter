@@ -17,25 +17,35 @@ import os
 import shutil
 import subprocess
 
+from ji_html import render as render_html
 from ji_spec import build_spec
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def render(spec_path: str, out_path: str) -> str:
+def render(spec: dict, spec_path: str, out_path: str) -> str:
+    """워드로 찍는다. Node 가 없으면 인쇄용 HTML 로 대신한다."""
     node = shutil.which("node")
+    reason = None
     if not node:
-        raise SystemExit("node 를 찾을 수 없다. Node.js 설치 후 다시 실행할 것.")
-    script = os.path.join(HERE, "ji_sheet.js")
-    proc = subprocess.run([node, script, spec_path, out_path],
-                          capture_output=True, text=True, cwd=HERE)
-    if proc.returncode != 0:
+        reason = "Node.js 가 없다"
+    else:
+        proc = subprocess.run([node, os.path.join(HERE, "ji_sheet.js"), spec_path, out_path],
+                              capture_output=True, text=True, cwd=HERE)
+        if proc.returncode == 0:
+            print(proc.stdout.strip())
+            return out_path
         msg = (proc.stderr or proc.stdout).strip()
-        if "Cannot find module 'docx'" in msg:
-            raise SystemExit("docx 모듈이 없다. motion 폴더에서 `npm install docx` 실행할 것.")
-        raise SystemExit(f"문서 생성 실패:\n{msg}")
-    print(proc.stdout.strip())
-    return out_path
+        reason = ("docx 모듈이 없다 (motion 폴더에서 npm install)"
+                  if "Cannot find module 'docx'" in msg else msg.splitlines()[-1][:160])
+
+    html_path = os.path.splitext(out_path)[0] + ".html"
+    render_html(spec, html_path)
+    size = os.path.getsize(html_path) / 1024
+    print(f"{html_path}  {size:.0f} KB  단계 {len(spec['steps'])}개")
+    print(f"  워드 파일 대신 인쇄용 HTML 로 만들었다 — {reason}")
+    print("  브라우저에서 열어 인쇄 > PDF 로 저장하거나 워드에 붙여넣으면 된다.")
+    return html_path
 
 
 def main():
@@ -102,7 +112,7 @@ def main():
         json.dump(spec, fh, indent=2, ensure_ascii=False)
 
     out = args.out or os.path.join(args.out_dir, f"{stem}_작업지도서.docx")
-    render(spec_path, out)
+    out = render(spec, spec_path, out)
 
     auto = sum(1 for s in spec["steps"] for k in s["key_points"] if k["source"] == "자동")
     man = sum(1 for s in spec["steps"] for k in s["key_points"] if k["source"] == "검수")
@@ -121,7 +131,7 @@ def main():
               f'(상 {sm.get("by_severity", {}).get("상", 0)} / '
               f'중 {sm.get("by_severity", {}).get("중", 0)} / '
               f'하 {sm.get("by_severity", {}).get("하", 0)})')
-    print(f"\nspec_json : {spec_path}\ndocx      : {out}")
+    print(f"\nspec_json : {spec_path}\n문서       : {out}")
 
 
 if __name__ == "__main__":
