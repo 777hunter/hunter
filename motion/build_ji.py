@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""M4 — TWI 작업지도서(3열) 생성.
+
+    python motion/build_ji.py --standard out/work_standard.json \
+        --shots out/work_shots.json --out-dir out \
+        --job-name "브래킷 조립" --process "1공정 조립" --author "홍길동"
+
+주요단계·시간·사진은 M1~M3 관측값이고, 급소는 관측에서 근거가 나온 것만 초안으로
+넣는다. 급소의 이유는 영상에 없는 정보라 빈칸으로 둔다.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import shutil
+import subprocess
+
+from ji_spec import build_spec
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def render(spec_path: str, out_path: str) -> str:
+    node = shutil.which("node")
+    if not node:
+        raise SystemExit("node 를 찾을 수 없다. Node.js 설치 후 다시 실행할 것.")
+    script = os.path.join(HERE, "ji_sheet.js")
+    proc = subprocess.run([node, script, spec_path, out_path],
+                          capture_output=True, text=True, cwd=HERE)
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout).strip()
+        if "Cannot find module 'docx'" in msg:
+            raise SystemExit("docx 모듈이 없다. motion 폴더에서 `npm install docx` 실행할 것.")
+        raise SystemExit(f"문서 생성 실패:\n{msg}")
+    print(proc.stdout.strip())
+    return out_path
+
+
+def main():
+    ap = argparse.ArgumentParser(description="TWI 3열 작업지도서 생성")
+    ap.add_argument("--standard", required=True)
+    ap.add_argument("--shots", default=None)
+    ap.add_argument("--out-dir", default="standard_out")
+    ap.add_argument("--out", default=None, help="출력 .docx 경로")
+    ap.add_argument("--job-name", default=None, help="작업명")
+    ap.add_argument("--process", default="", help="공정명")
+    ap.add_argument("--doc-no", default="", help="문서번호")
+    ap.add_argument("--revision", default="", help="개정")
+    ap.add_argument("--author", default="", help="작성자")
+    ap.add_argument("--date", default=None, help="작성일 (기본: 오늘)")
+    ap.add_argument("--equipment", default="", help="설비")
+    ap.add_argument("--tooling", default="", help="치공구")
+    ap.add_argument("--ppe", default="", help="보호구")
+    ap.add_argument("--font-name", default="맑은 고딕", help="문서에 쓸 글꼴 이름")
+    ap.add_argument("--font", default=None, help="차트용 한글 TTF 경로")
+    args = ap.parse_args()
+
+    with open(args.standard, encoding="utf-8") as fh:
+        std = json.load(fh)
+    shots = None
+    if args.shots and os.path.exists(args.shots):
+        with open(args.shots, encoding="utf-8") as fh:
+            shots = json.load(fh)
+
+    stem = os.path.splitext(os.path.basename(args.standard))[0].replace("_standard", "")
+    os.makedirs(args.out_dir, exist_ok=True)
+    header = {
+        "job_name": args.job_name or std.get("meta", {}).get("video", stem),
+        "process": args.process, "doc_no": args.doc_no, "revision": args.revision,
+        "author": args.author, "date": args.date or dt.date.today().isoformat(),
+        "equipment": args.equipment, "tooling": args.tooling, "ppe": args.ppe,
+        "font_name": args.font_name, "font": args.font,
+    }
+    spec = build_spec(std, shots, header, args.out_dir)
+    spec_path = os.path.join(args.out_dir, f"{stem}_ji_spec.json")
+    with open(spec_path, "w", encoding="utf-8") as fh:
+        json.dump(spec, fh, indent=2, ensure_ascii=False)
+
+    out = args.out or os.path.join(args.out_dir, f"{stem}_작업지도서.docx")
+    render(spec_path, out)
+
+    auto = sum(1 for s in spec["steps"] for k in s["key_points"] if k["source"] == "자동")
+    print(f"\n  주요단계 {len(spec['steps'])}개 · 사진 "
+          f"{sum(1 for s in spec['steps'] if s['photo'])}컷 · 급소 초안 {auto}건")
+    print(f"  채워야 할 항목 {len(spec['blanks'])}개")
+    for b in spec["blanks"][:6]:
+        print(f"    ☐ {b}")
+    if len(spec["blanks"]) > 6:
+        print(f"    … 외 {len(spec['blanks']) - 6}건 (문서 마지막 장에 전체 목록)")
+    print(f"\nspec_json : {spec_path}\ndocx      : {out}")
+
+
+if __name__ == "__main__":
+    main()
