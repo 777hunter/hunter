@@ -27,6 +27,7 @@ class Element:
     out_of_order: bool = False
     name: str | None = None
     zone_info: dict | None = None
+    moments: dict = field(default_factory=dict)
 
     @property
     def dur_s(self) -> float:
@@ -47,6 +48,7 @@ class Element:
                 "grasp_zone": (self.zone_info or {}).get("grasp_zone"),
                 "release_zone": (self.zone_info or {}).get("release_zone"),
                 "reach": (self.zone_info or {}).get("reach"),
+                "moments": {k: round(v, 3) for k, v in self.moments.items()},
                 "notes": (self.zone_info or {}).get("notes", [])}
 
 
@@ -104,6 +106,23 @@ def split_elements(per_side: dict, dom: str, frames, times: np.ndarray, meta: di
             if hit:
                 mid = (hit[0]["start_s"] + hit[0]["end_s"]) / 2
                 setattr(el, attr, _wrist_at(frames, times, dom, mid, meta))
+        # 사진으로 쓸 만한 "결정적 순간"들. M3 가 이 시점 주변에서 프레임을 고른다.
+        def _hits(tag):
+            return [s for s in dom_segs
+                    if s["therblig"] == tag and s["end_s"] > start and s["start_s"] < end]
+        for tag, key, pick in (("G", "grasp_end", lambda h: h[0]["end_s"]),
+                               ("P", "position_end", lambda h: h[-1]["end_s"]),
+                               ("RL", "release_start", lambda h: h[-1]["start_s"])):
+            h = _hits(tag)
+            if h:
+                el.moments[key] = float(np.clip(pick(h), start, end))
+        use = _hits("U")
+        if use:
+            longest = max(use, key=lambda s: s["dur_s"])
+            el.moments["use_mid"] = float(np.clip((longest["start_s"] + longest["end_s"]) / 2,
+                                                  start, end))
+        el.moments["mid"] = (start + end) / 2
+
         if el.grasp_xy is None:
             el.grasp_xy = _wrist_at(frames, times, dom, start, meta)
         if el.release_xy is None:
