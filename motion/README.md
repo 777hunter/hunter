@@ -1,5 +1,114 @@
 # 동영상 모션 인식 / 동작 분석
 
+작업 영상을 넣으면 동작을 인식해 작업요소로 나누고, 서블릭으로 분석하고,
+사진을 뽑아 TWI 3열 작업지도서 초안까지 만든다.
+
+## 빠른 시작
+
+### 설치
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate     # 윈도우: .venv\Scripts\activate
+pip install -r motion/requirements.txt
+cd motion && npm install && cd ..                      # 워드 문서 렌더러
+```
+
+리눅스 헤드리스 서버라면 `sudo apt-get install -y libegl1 libgl1 libgles2` 가 더 필요하다.
+모델 파일은 첫 실행 때 `~/.cache/mediapipe` 로 자동 내려받는다.
+
+한글 캡션에 쓸 글꼴이 있어야 한다. 윈도우·맥은 기본 글꼴로 잡히고, 리눅스는
+`sudo apt-get install fonts-nanum` 또는 `--font /경로/글꼴.ttf`.
+
+### 세 번 돌리면 끝난다
+
+```bash
+# 1차 — 존 없이. 쓸 수 있는 영상인지 보고, 손이 어디를 집고 놓는지 찍어낸다
+python motion/run_all.py work.mp4 --out-dir out
+
+# zone_tool.html 을 브라우저에서 열고 영상 + out/work_elements.csv 를 얹어
+# 부품박스·지그·배출구를 사각형으로 표시하고 zones.json 저장
+
+# 2차 — 이름이 붙고 사진이 나오고 문서 초안이 나온다
+python motion/run_all.py work.mp4 --out-dir out --zones zones.json \
+    --job-name "브래킷 조립" --process "1공정" --author "홍길동"
+
+# review_tool.html 을 열고 out 폴더 + 영상을 넣어 검수 (여기가 30분)
+# 급소의 이유를 채우고 사진을 고른 뒤 review.json 저장
+
+# 3차 — 최종 문서
+python motion/run_all.py work.mp4 --out-dir out --zones zones.json \
+    --review review.json --force
+```
+
+이미 만들어진 산출물은 건너뛴다. 다시 만들려면 `--force`, 특정 단계만 돌리려면
+`--from shots --to ji`.
+
+불량 이력이 있으면 `--defects defects.csv`(열: `불량모드`, `건수`, `키워드`)를
+붙인다. 포카요케 신호에 실제 불량 모드가 연결되고 심각도가 올라간다.
+
+### 영상 촬영 조건
+
+| 항목 | 기준 |
+| --- | --- |
+| 각도 | 손이 계속 보이는 45도 오버숄더 또는 탑다운 |
+| 프레임 | 60fps 권장 (30fps 는 쥐기 전이가 2~3프레임이라 놓치기 쉽다) |
+| 길이 | 최소 5사이클, 권장 10사이클 |
+| 손 크기 | 손목–중지뿌리 길이가 40px 이상 |
+| 조명 | 역광·저조도 피하기. 장갑은 무늬 없는 단색이 낫다 |
+
+### 먼저 사전 점검부터
+
+```bash
+python motion/preflight.py work.mp4 --out-dir out
+```
+
+10분 영상을 다 돌린 뒤에 "손이 안 잡혔다"를 알면 늦다. 영상 곳곳에서 연속
+프레임 덩어리를 표본으로 떠서 몇 초 만에 판정한다.
+
+- **검출률·손 크기·프레임레이트**로 진행 가능 / 조건부 / 재촬영 권장을 낸다
+- **쥠 정도 분포**에서 쥔 상태와 편 상태를 가르는 지점을 오츠 방식으로 찾아
+  `--close-curl`, `--open-curl` 을 추천한다. 이게 이 시스템에서 제일 자주
+  어긋나는 값이다. 부품이나 공구를 쥐면 손가락이 완전히 안 접혀서 기본값으로는
+  쥐기가 안 잡히고, 그러면 요소 분할부터 무너진다
+- **손목 속도 분포**에서 `--still-speed`, `--move-speed` 를 추천한다.
+  속도는 같은 표본 덩어리 안의 연속 프레임끼리만 재기 때문에 본 파이프라인과
+  같은 눈금이다
+
+`run_all.py` 는 이 추천값을 자동으로 적용한다(`--no-auto-tune` 으로 끌 수 있다).
+분리도가 0.35 아래로 나오면 두 무리로 안 갈린다는 뜻이니 추천값을 그대로 믿지
+말고 `*_preflight.png` 의 분포를 직접 봐야 한다.
+
+### 처리 시간
+
+측정 기준 CPU에서 초당 약 40프레임을 처리한다. 30fps 영상이면 대략 영상 길이의
+0.8배, 10분 영상이면 7~8분쯤 걸린다(요소 분할 단계 기준, 나머지 단계는 몇 초).
+`--stride 2` 로 절반만 볼 수 있지만 권하지 않는다. 30fps에서 쥐기 전이가 2~3프레임인데
+건너뛰면 그 전이를 놓쳐 요소 경계가 뭉개진다.
+
+### 출력물
+
+```
+out/
+  work_preflight.json / .png     사전 점검 판정과 추천 임계값
+  work_elements.csv              요소 전체 (존 그릴 때 이 파일을 얹는다)
+  work_standard.csv / .json      표준 요소표, 정미시간, 표준시간
+  work_cycles.svg                사이클 정합 차트
+  work_shots.json, shots/        요소별 후보 사진 3장과 주석본
+  work_shots.png                 대표 사진 시트 (검수용)
+  work_risks.csv / .json         포카요케 리스크 신호
+  work_작업지도서.docx            TWI 3열 작업지도서 + 부록 A/B/C
+```
+
+### 막히면 보는 순서
+
+1. `*_preflight.png` — 손이 안 잡히면 여기서 끝이다. 재촬영
+2. `python motion/therblig_tag.py work.mp4 --annotate` — 쥐기(G)·놓기(RL)가
+   제대로 잡히는지 오버레이 영상으로 확인. 안 잡히면 `--close-curl` 을 올린다
+3. `작업요소가 2개밖에 안 나온다` — RL 이 안 잡히는 것이다. 2번으로
+4. `주기 신뢰도가 낮다` — 사이클당 요소 수를 알면 `--period N` 으로 직접 준다
+5. `명명률이 낮다` — zone_tool 에 elements.csv 를 얹어 점이 찍혔는데 존이 없는
+   자리를 찾는다
+
 동영상 파일을 넣으면 프레임마다 사람 관절 33개를 뽑아 관절 각도, 반복 횟수,
 움직임 구간을 계산하고 스켈레톤을 덧씌운 영상까지 내보내는 CLI.
 
