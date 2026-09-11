@@ -1,0 +1,9 @@
+{
+  "name": "motion-work-standard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "작업 영상에서 TWI 작업지도서를 만드는 도구의 문서 렌더러",
+  "dependencies": {
+    "docx": "^9.7.1"
+  }
+}

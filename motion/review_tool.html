@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작업표준 검수</title>
+<style>
+  :root{
+    --ground:#f3f4f1; --surface:#fff; --surface-2:#eaede8; --ink:#151a19; --ink-2:#4a524f;
+    --ink-3:#767f7b; --rule:#d6dad4; --accent:#1e4f52; --accent-soft:#dee9e7;
+    --warn:#8e5a16; --warn-soft:#f6ead7; --ok:#22705f; --ok-soft:#dcebe5; --auto:#457b9d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:14px/1.6 "IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif}
+  button{font:inherit;padding:6px 11px;border:1px solid var(--rule);background:var(--surface);
+    color:var(--ink);cursor:pointer;border-radius:2px}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.primary:hover{color:#fff;opacity:.9}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  input[type=text],textarea{font:inherit;padding:7px 9px;border:1px solid var(--rule);
+    background:var(--surface);color:var(--ink);width:100%;border-radius:2px}
+  textarea{resize:vertical;min-height:74px;line-height:1.6}
+  .mono{font-variant-numeric:tabular-nums}
+
+  header{background:var(--surface);border-bottom:1px solid var(--rule);padding:10px 18px;
+    display:flex;gap:16px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  header h1{margin:0;font-size:15px;font-weight:600;white-space:nowrap}
+  .load{display:flex;gap:8px;align-items:center;font-size:12px;flex-wrap:wrap}
+  .grow{flex:1}
+  .prog{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink-2);white-space:nowrap}
+  .bar{width:150px;height:7px;background:var(--surface-2);border-radius:4px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--ok);width:0%}
+
+  main{display:grid;grid-template-columns:270px 1fr 380px;gap:14px;padding:14px;align-items:start}
+  @media (max-width:1100px){main{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--rule)}
+  .card>h2{margin:0;font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:600;padding:11px 14px;border-bottom:1px solid var(--rule)}
+  .pad{padding:14px}
+
+  ol{list-style:none;margin:0;padding:0;max-height:calc(100vh - 170px);overflow:auto}
+  ol li{padding:10px 14px;border-bottom:1px solid var(--rule);cursor:pointer;display:grid;
+    grid-template-columns:26px 1fr auto;gap:8px;align-items:baseline}
+  ol li:hover{background:var(--surface-2)}
+  ol li.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+  ol li .no{color:var(--ink-3);font-size:12px}
+  ol li .nm{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  ol li .t{font-size:11.5px;color:var(--ink-3)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--rule);display:inline-block}
+  .dot.done{background:var(--ok)} .dot.edited{background:var(--auto)}
+
+  .shots{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .shot{border:2px solid var(--rule);padding:3px;cursor:pointer;background:var(--surface)}
+  .shot.sel{border-color:var(--accent)}
+  .shot img{display:block;width:100%;height:auto}
+  .shot span{display:block;font-size:11px;color:var(--ink-3);padding:3px 2px 0;text-align:center}
+  video{width:100%;background:#111412;display:block}
+
+  .f{display:grid;gap:5px;margin-bottom:13px}
+  .f>span{font-size:11.5px;color:var(--ink-3);letter-spacing:.03em}
+  .kp{display:flex;gap:6px;align-items:flex-start;margin-bottom:6px}
+  .kp .src{font-size:10px;padding:3px 6px;border-radius:2px;white-space:nowrap;margin-top:6px}
+  .src.auto{background:#e4edf3;color:var(--auto)}
+  .src.man{background:var(--ok-soft);color:var(--ok)}
+  .kp button{padding:5px 8px;color:var(--ink-3)}
+  .flags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .flag{font-size:11px;padding:3px 8px;border-radius:2px;background:var(--warn-soft);color:var(--warn)}
+  .flag.info{background:var(--surface-2);color:var(--ink-3)}
+  .meta{font-size:12px;color:var(--ink-3);line-height:1.7}
+  .hint{font-size:12px;color:var(--ink-3);line-height:1.55}
+  kbd{font:11px/1 ui-monospace,monospace;border:1px solid var(--rule);border-bottom-width:2px;
+    padding:2px 5px;border-radius:3px;background:var(--surface-2)}
+  .empty{padding:40px 20px;text-align:center;color:var(--ink-3);font-size:13px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>작업표준 검수</h1>
+  <div class="load">
+    <label>결과 폴더 <input type="file" id="dir" webkitdirectory directory multiple></label>
+    <label>또는 파일 직접 <input type="file" id="picks" multiple
+      accept=".json,.jpg,.jpeg,.png"></label>
+    <label>영상 <input type="file" id="vid" accept="video/*"></label>
+  </div>
+  <span class="grow"></span>
+  <div class="prog">
+    <span id="progText">불러오기 전</span>
+    <span class="bar"><i id="progBar"></i></span>
+  </div>
+  <button id="save" class="primary" disabled>review.json 저장</button>
+</header>
+
+<main>
+  <div class="card">
+    <h2>작업요소</h2>
+    <ol id="list"><li class="empty" style="display:block">결과 폴더를 먼저 고른다</li></ol>
+  </div>
+
+  <div class="card" id="editorCard">
+    <h2>주요단계 검수</h2>
+    <div class="pad" id="editor">
+      <p class="empty">왼쪽에서 요소를 고른다</p>
+    </div>
+  </div>
+
+  <div>
+    <div class="card" style="margin-bottom:14px">
+      <h2>구간 재생</h2>
+      <video id="player" controls muted playsinline></video>
+      <div class="pad">
+        <div class="row" style="margin-bottom:8px">
+          <button id="loopBtn">구간 반복 끄기</button>
+          <span class="meta" id="clipInfo">영상을 불러오면 이 요소 구간만 반복 재생한다</span>
+        </div>
+        <p class="hint"><kbd>J</kbd> 이전 <kbd>K</kbd> 다음 <kbd>Enter</kbd> 확인하고 다음
+          <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 사진 선택 <kbd>Space</kbd> 재생/정지</p>
+      </div>
+    </div>
+    <div class="card">
+      <h2>문서 정보</h2>
+      <div class="pad" id="header"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const HEADER_FIELDS = [
+  ["job_name","작업명"],["process","공정명"],["doc_no","문서번호"],["revision","개정"],
+  ["author","작성자"],["equipment","설비"],["tooling","치공구"],["ppe","보호구"],
+];
+let std=null, shots=null, files=new Map(), imgURL=new Map(), sel=-1, loop=true, stem="";
+let review={ version:1, video:"", header:{}, elements:{} };
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const key = () => "ji-review:" + (stem || "unknown");
+
+function autosave(){
+  try { localStorage.setItem(key(), JSON.stringify(review)); } catch (e) {}
+}
+function restore(){
+  try {
+    const raw = localStorage.getItem(key());
+    if (!raw) return false;
+    const doc = JSON.parse(raw);
+    if (doc && doc.elements){ review = doc; return true; }
+  } catch (e) {}
+  return false;
+}
+
+function loadFiles(list){
+  files = new Map();
+  for (const f of list) files.set(f.name, f);
+  const stdFile = [...files.values()].find(f => f.name.endsWith("_standard.json"));
+  if (!stdFile){ alert("*_standard.json 을 찾지 못했다. build_standard.py 결과 폴더를 고를 것."); return; }
+  const shotFile = [...files.values()].find(f => f.name.endsWith("_shots.json"));
+  stem = stdFile.name.replace("_standard.json","");
+  Promise.all([stdFile.text(), shotFile ? shotFile.text() : Promise.resolve("null")])
+    .then(([a,b]) => { std = JSON.parse(a); shots = JSON.parse(b); boot(); });
+}
+$("#dir").onchange = e => loadFiles(e.target.files);
+$("#picks").onchange = e => loadFiles(e.target.files);
+$("#vid").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  $("#player").src = URL.createObjectURL(f);
+  review.video = f.name;
+  if (sel >= 0) selectEl(sel);
+};
+
+function shotsFor(pos){
+  if (!shots) return [];
+  const entry = (shots.positions || []).find(p => p.position === pos);
+  return entry ? entry.shots : [];
+}
+function shotURL(name){
+  if (!name) return null;
+  if (imgURL.has(name)) return imgURL.get(name);
+  const f = files.get(name);
+  if (!f) return null;
+  const url = URL.createObjectURL(f);
+  imgURL.set(name, url);
+  return url;
+}
+
+function boot(){
+  const restored = restore();
+  review.video = review.video || (std.meta && std.meta.video) || "";
+  for (const row of std.standard){
+    const pos = row.position;
+    if (!review.elements[pos]){
+      review.elements[pos] = {
+        name: row.name || "",
+        key_points: autoPoints(row).map(t => ({text:t, source:"자동"})),
+        reasons: "",
+        photo: (shotsFor(pos)[0] || {}).annotated || null,
+        status: "pending",
+        note: "",
+      };
+    }
+  }
+  if (!Object.keys(review.header).length){
+    review.header = { job_name: (std.meta && std.meta.video) || stem };
+  }
+  renderHeader(); renderList(); selectEl(0);
+  $("#save").disabled = false;
+  if (restored) toast("이전 검수 내용을 복구했다");
+}
+
+function autoPoints(row){
+  const out = [];
+  const flags = row.flags || [];
+  const dom = std.dominant_hand === "Right" ? "좌수" : "우수";
+  if (flags.includes("순서 이탈")){
+    const cs = (std.variations||[]).filter(v => v.type==="reorder" && v.position===row.position-1
+      && v.cycle!==null).map(v => v.cycle+1);
+    out.push(`이 순서를 지킬 것. 관측 중 순서가 바뀐 사이클이 있었다${cs.length?` (사이클 ${cs.join(", ")}번)`:""}`);
+  }
+  if (flags.includes("누락")) out.push(`빠뜨리기 쉬움. 관측 ${row.presence} 회만 수행됨`);
+  if (flags.includes("산포")) out.push(`작업시간 편차 큼 (중앙값 ${row.median_s}초, 범위 ${row.min_s}~${row.max_s}초). 방법이 안정돼 있지 않다`);
+  if (flags.includes("동작구성 불일치")) out.push("사이클마다 손동작 구성이 달랐다. 방법을 통일할 것");
+  if (flags.includes("장거리 이동")) out.push("손 이동 거리가 길다. 부품 배치를 재검토할 것");
+  if (row.support_used) out.push(`${dom}으로 부품을 지지`);
+  if ((row.signature||"").includes("U")) out.push("공구 사용 구간. 체결 상태를 확인할 것");
+  return out;
+}
+
+function renderHeader(){
+  $("#header").innerHTML = HEADER_FIELDS.map(([k,label]) =>
+    `<label class="f"><span>${label}</span>
+      <input type="text" id="h-${k}" value="${esc(review.header[k]||"")}"></label>`).join("");
+  for (const [k] of HEADER_FIELDS){
+    $("#h-"+k).addEventListener("input", e => { review.header[k] = e.target.value; autosave(); });
+  }
+}
+
+function renderList(){
+  const ol = $("#list");
+  ol.innerHTML = std.standard.map((row,i) => {
+    const r = review.elements[row.position];
+    return `<li data-i="${i}" class="${i===sel?"sel":""}">
+      <span class="no mono">${row.position}</span>
+      <span class="nm">${esc(r.name || row.signature)}</span>
+      <span class="t mono">${row.median_s}s <i class="dot ${r.status==="confirmed"?"done":(r.status==="edited"?"edited":"")}"></i></span>
+    </li>`;
+  }).join("");
+  ol.querySelectorAll("li").forEach(li => li.onclick = () => selectEl(+li.dataset.i));
+  const done = Object.values(review.elements).filter(r => r.status !== "pending").length;
+  const total = std.standard.length;
+  $("#progText").textContent = `검토 ${done}/${total}`;
+  $("#progBar").style.width = (total ? done/total*100 : 0) + "%";
+}
+
+function selectEl(i){
+  if (!std || i<0 || i>=std.standard.length) return;
+  sel = i;
+  const row = std.standard[i], r = review.elements[row.position];
+  const cands = shotsFor(row.position);
+
+  const flagHTML = [
+    ...(row.flags||[]).map(f => `<span class="flag">${esc(f)}</span>`),
+    `<span class="flag info">관측 ${esc(row.presence)}</span>`,
+    `<span class="flag info">${esc(row.signature)}</span>`,
+  ].join("");
+
+  const shotHTML = cands.length ? cands.map((s,n) => {
+    const url = shotURL(s.annotated) || shotURL(s.file);
+    return `<div class="shot ${r.photo===s.annotated?"sel":""}" data-name="${esc(s.annotated)}">
+      ${url?`<img src="${url}" alt="${esc(s.kind_ko)}">`:`<div class="empty">이미지 없음</div>`}
+      <span>${n+1}. ${esc(s.kind_ko)} · ${s.time_s}s</span></div>`;
+  }).join("") : `<p class="hint">이 요소는 사진 후보가 없다. 직접 촬영해 넣어야 한다.</p>`;
+
+  $("#editor").innerHTML = `
+    <div class="flags">${flagHTML}</div>
+    <div class="shots" style="margin-bottom:14px">${shotHTML}</div>
+    <label class="f"><span>주요단계 (작업표준서에 그대로 실린다)</span>
+      <input type="text" id="e-name" value="${esc(r.name)}" placeholder="예) 브래킷을 지그에 삽입"></label>
+    <div class="f"><span>급소 — 성공을 좌우하는 것, 안전, 작업을 쉽게 하는 요령</span>
+      <div id="kps"></div>
+      <div><button id="addKp">급소 추가</button></div></div>
+    <label class="f"><span>급소의 이유 — 영상에 없는 정보다. 여기만 채우면 문서가 완성된다</span>
+      <textarea id="e-reason" placeholder="예) 방향이 뒤집히면 후공정에서 커넥터가 안 들어간다">${esc(r.reasons)}</textarea></label>
+    <label class="f"><span>메모 (문서에는 안 들어간다)</span>
+      <input type="text" id="e-note" value="${esc(r.note)}"></label>
+    <div class="row">
+      <button class="primary" id="confirm">확인하고 다음</button>
+      <span class="meta" id="stat"></span>
+    </div>`;
+
+  renderKps();
+  $("#e-name").addEventListener("input", e => { r.name = e.target.value; touch(r); renderList(); });
+  $("#e-reason").addEventListener("input", e => { r.reasons = e.target.value; touch(r); });
+  $("#e-note").addEventListener("input", e => { r.note = e.target.value; autosave(); });
+  $("#addKp").onclick = () => { r.key_points.push({text:"", source:"검수"}); touch(r); renderKps(); };
+  $("#confirm").onclick = () => { r.status = "confirmed"; renderList(); autosave();
+    selectEl(Math.min(sel+1, std.standard.length-1)); };
+  $("#editor").querySelectorAll(".shot").forEach(el => el.onclick = () => {
+    r.photo = el.dataset.name; touch(r); selectEl(sel);
+  });
+  $("#stat").textContent = r.status === "confirmed" ? "확인됨" :
+    (r.status === "edited" ? "수정됨 — 아직 확인 안 함" : "미검토");
+
+  renderList();
+  playClip(row);
+}
+
+function renderKps(){
+  const r = review.elements[std.standard[sel].position];
+  const box = $("#kps");
+  box.innerHTML = r.key_points.map((k,i) => `<div class="kp">
+      <span class="src ${k.source==="자동"?"auto":"man"}">${k.source}</span>
+      <input type="text" data-i="${i}" value="${esc(k.text)}" placeholder="급소 내용">
+      <button data-del="${i}" title="삭제">✕</button></div>`).join("")
+    || `<p class="hint">관측에서 나온 신호가 없다. 필요한 급소를 직접 추가할 것.</p>`;
+  box.querySelectorAll("input").forEach(inp => inp.addEventListener("input", e => {
+    const k = r.key_points[+e.target.dataset.i];
+    k.text = e.target.value;
+    if (k.source === "자동") k.source = "검수";
+    touch(r);
+    e.target.previousElementSibling.className = "src man";
+    e.target.previousElementSibling.textContent = "검수";
+  }));
+  box.querySelectorAll("button[data-del]").forEach(b => b.onclick = () => {
+    r.key_points.splice(+b.dataset.del,1); touch(r); renderKps();
+  });
+}
+
+function touch(r){
+  if (r.status !== "confirmed") r.status = "edited";
+  autosave();
+}
+
+let clip = null;
+function playClip(row){
+  const els = (std.elements||[]).filter(e => e.position === row.position-1);
+  if (!els.length || !$("#player").src){ $("#clipInfo").textContent =
+    $("#player").src ? "이 요소의 구간 정보가 없다" : "영상을 불러오면 이 요소 구간만 반복 재생한다"; return; }
+  const rep = els.reduce((a,b) =>
+    Math.abs(b.dur_s-row.median_s) < Math.abs(a.dur_s-row.median_s) ? b : a);
+  clip = { start: rep.start_s, end: rep.end_s };
+  const p = $("#player");
+  p.currentTime = clip.start;
+  p.play().catch(()=>{});
+  $("#clipInfo").textContent = `사이클 ${rep.cycle+1} · ${rep.start_s.toFixed(2)}–${rep.end_s.toFixed(2)}초`;
+}
+$("#player").addEventListener("timeupdate", () => {
+  if (!loop || !clip) return;
+  const p = $("#player");
+  if (p.currentTime >= clip.end || p.currentTime < clip.start - 0.3) p.currentTime = clip.start;
+});
+$("#loopBtn").onclick = () => {
+  loop = !loop;
+  $("#loopBtn").textContent = loop ? "구간 반복 끄기" : "구간 반복 켜기";
+};
+
+document.addEventListener("keydown", e => {
+  if (["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName)){
+    if (e.key === "Enter" && e.target.id === "e-name") $("#confirm").click();
+    return;
+  }
+  if (!std) return;
+  if (e.key === "j" || e.key === "ㅓ") { selectEl(sel-1); e.preventDefault(); }
+  else if (e.key === "k" || e.key === "ㅏ") { selectEl(sel+1); e.preventDefault(); }
+  else if (e.key === "Enter") { $("#confirm")?.click(); e.preventDefault(); }
+  else if ("123".includes(e.key)){
+    const shot = $("#editor").querySelectorAll(".shot")[+e.key-1];
+    if (shot) shot.click();
+  } else if (e.key === " "){
+    const p = $("#player"); p.paused ? p.play() : p.pause(); e.preventDefault();
+  }
+});
+
+function toast(msg){
+  const el = document.createElement("div");
+  el.textContent = msg;
+  el.style.cssText = "position:fixed;bottom:18px;left:50%;transform:translateX(-50%);"
+    + "background:#1e4f52;color:#fff;padding:9px 16px;border-radius:3px;font-size:13px;z-index:9";
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+$("#save").onclick = () => {
+  const doc = JSON.parse(JSON.stringify(review));
+  doc.reviewed_at = new Date().toISOString().slice(0,19);
+  doc.summary = {
+    total: std.standard.length,
+    confirmed: Object.values(review.elements).filter(r => r.status === "confirmed").length,
+    reasons_filled: Object.values(review.elements).filter(r => (r.reasons||"").trim()).length,
+  };
+  const blob = new Blob([JSON.stringify(doc, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "review.json"; a.click();
+  toast(`저장했다 — 확인 ${doc.summary.confirmed}/${doc.summary.total}, 이유 기입 ${doc.summary.reasons_filled}건`);
+};
+</script>
+</body>
+</html>
