@@ -1,0 +1,391 @@
+<meta charset="utf-8">
+<title>홈 화면 정리기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* 레이아웃: 왼쪽은 앱 목록(입력), 오른쪽은 폰 모양 미리보기(결과). 좁으면 미리보기가 위로 */
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --ink: #18212e;
+  --muted: #5d6b7e;
+  --line: #d7dde6;
+  --accent: #2f5bea;
+  --accent-soft: #e2e9fd;
+  --phone: #1b2330;
+  --phone-ink: #f2f5fa;
+  --tile: #2a3444;
+  --keep: #1f8a5b;
+  --keep-soft: #dcf2e7;
+  --warn: #b5530f;
+  --warn-soft: #fbe8d8;
+  --drop: #c0362c;
+  --drop-soft: #fadedb;
+  --f-display: "Do Hyeon", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --f-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10151d; --surface: #18202b; --ink: #e6ebf2; --muted: #95a3b6; --line: #2b3646;
+    --accent: #7d9bff; --accent-soft: #223056; --phone: #05080c; --phone-ink: #eef2f8; --tile: #222c3a;
+    --keep: #5cc794; --keep-soft: #173a2a; --warn: #f0a265; --warn-soft: #3e2a19; --drop: #f08077; --drop-soft: #432020;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10151d; --surface: #18202b; --ink: #e6ebf2; --muted: #95a3b6; --line: #2b3646;
+  --accent: #7d9bff; --accent-soft: #223056; --phone: #05080c; --phone-ink: #eef2f8; --tile: #222c3a;
+  --keep: #5cc794; --keep-soft: #173a2a; --warn: #f0a265; --warn-soft: #3e2a19; --drop: #f08077; --drop-soft: #432020;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; padding: 24px 16px 48px; }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 24px; }
+header h1 { font-family: var(--f-display); font-weight: 400; font-size: 2.2rem; line-height: 1.1; margin: 0; text-wrap: balance; }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 62ch; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: flex; align-items: baseline; gap: 8px; }
+.stat b { font-family: var(--f-mono); font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 0.85rem; }
+.stat.drop b { color: var(--drop); }
+.stat.keep b { color: var(--keep); }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: start; }
+@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } .preview { order: -1; } }
+section.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px; min-width: 0; }
+h2 { font-size: 1rem; margin: 0; font-weight: 600; }
+.label { font-size: 0.75rem; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+form.add { display: flex; flex-wrap: wrap; gap: 8px; }
+input, select, textarea, button { font: inherit; color: inherit; }
+input[type=text], select, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+input[type=text] { flex: 1 1 140px; }
+textarea { width: 100%; min-height: 80px; resize: vertical; }
+button { cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); padding: 8px 12px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
+button.ghost { background: transparent; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; }
+details summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+details[open] { display: grid; gap: 8px; }
+.filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border-radius: 999px; padding: 4px 10px; font-size: 0.85rem; }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+ul.apps { list-style: none; margin: 0; padding: 0; display: grid; }
+ul.apps li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 10px 0; border-top: 1px solid var(--line); align-items: center; }
+.app-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.app-name strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-name select { padding: 3px 6px; font-size: 0.8rem; }
+.star { border: none; background: none; padding: 2px 4px; font-size: 1.1rem; color: var(--line); line-height: 1; }
+.star[aria-pressed="true"] { color: var(--warn); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: none; border-radius: 0; padding: 4px 9px; font-size: 0.8rem; background: transparent; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"][data-f="daily"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg button[aria-pressed="true"][data-f="weekly"],
+.seg button[aria-pressed="true"][data-f="monthly"] { background: var(--keep-soft); color: var(--keep); font-weight: 600; }
+.seg button[aria-pressed="true"][data-f="rarely"] { background: var(--drop-soft); color: var(--drop); font-weight: 600; }
+.row-end { display: flex; gap: 6px; align-items: center; }
+.x { border: none; background: none; color: var(--muted); padding: 4px 6px; }
+@media (max-width: 520px) { ul.apps li { grid-template-columns: minmax(0, 1fr); } }
+
+/* 미리보기 */
+.preview { display: grid; gap: 14px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+@media (max-width: 860px) { .preview { position: static; } }
+.phone { background: var(--phone); color: var(--phone-ink); border-radius: 34px; padding: 18px 14px 14px; display: grid; gap: 12px; max-width: 380px; width: 100%; margin: 0 auto; }
+.pager { display: flex; justify-content: center; gap: 6px; }
+.pager button { width: 8px; height: 8px; padding: 0; border-radius: 50%; border: none; background: var(--tile); }
+.pager button[aria-current="true"] { background: var(--phone-ink); }
+.screen-title { text-align: center; font-size: 0.75rem; opacity: 0.7; letter-spacing: 0.05em; }
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 8px; min-height: 300px; align-content: start; }
+.icon { display: grid; justify-items: center; gap: 4px; min-width: 0; }
+.icon .sq { width: 52px; height: 52px; max-width: 100%; border-radius: 13px; display: grid; place-items: center; font-family: var(--f-display); font-size: 1.35rem; color: #fff; }
+.icon small { font-size: 0.68rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder .sq { background: var(--tile); display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 7px; }
+.folder .sq i { display: block; border-radius: 3px; aspect-ratio: 1; }
+.dock { background: var(--tile); border-radius: 22px; padding: 10px 8px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.empty { grid-column: 1 / -1; text-align: center; opacity: 0.6; font-size: 0.85rem; padding-top: 80px; }
+.verdict { display: grid; gap: 10px; }
+.bucket { border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+.bucket.drop { background: var(--drop-soft); }
+.bucket.vault { background: var(--warn-soft); }
+.bucket h3 { margin: 0; font-size: 0.9rem; }
+.bucket.drop h3 { color: var(--drop); }
+.bucket.vault h3 { color: var(--warn); }
+.bucket p { margin: 0; font-size: 0.85rem; color: var(--ink); }
+.bucket .why { color: var(--muted); font-size: 0.8rem; }
+.note { color: var(--muted); font-size: 0.82rem; margin: 0; }
+.toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; }
+#copybox { width: 100%; min-height: 160px; font-family: var(--f-mono); font-size: 0.8rem; }
+@media (prefers-reduced-motion: no-preference) { .icon .sq { transition: transform .15s; } .icon:hover .sq { transform: scale(1.05); } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>홈 화면 정리기</h1>
+    <p>앱마다 얼마나 자주 쓰는지만 고르면 독, 첫 화면, 카테고리 폴더, 삭제 후보로 나눠 줍니다. 처음 보이는 목록은 예시입니다. 내 폰 앱으로 바꿔서 쓰세요.</p>
+  </header>
+
+  <div class="stats" id="stats" aria-live="polite"></div>
+
+  <div class="main">
+    <section class="panel">
+      <h2>내 앱 목록</h2>
+      <form class="add" id="addForm">
+        <input type="text" id="newName" placeholder="앱 이름" aria-label="앱 이름" required>
+        <select id="newCat" aria-label="카테고리"></select>
+        <select id="newFreq" aria-label="사용 빈도">
+          <option value="daily">매일</option>
+          <option value="weekly" selected>주 1회+</option>
+          <option value="monthly">월 1회+</option>
+          <option value="rarely">거의 안 씀</option>
+        </select>
+        <button class="primary" type="submit">추가</button>
+      </form>
+      <details>
+        <summary>여러 개 한 번에 붙여넣기</summary>
+        <p class="note">한 줄에 앱 하나. 설정 &gt; 앱 목록을 보면서 이름만 적어도 됩니다. 카테고리는 이름으로 짐작하고, 빈도는 '주 1회+'로 넣습니다.</p>
+        <textarea id="bulk" aria-label="앱 이름 여러 줄" placeholder="카카오톡&#10;토스&#10;쿠팡"></textarea>
+        <div class="tools"><button type="button" id="bulkAdd">목록에 넣기</button></div>
+      </details>
+      <div class="filter" id="filter" role="group" aria-label="빈도로 거르기"></div>
+      <ul class="apps" id="list"></ul>
+      <div class="tools">
+        <button type="button" class="ghost" id="sample">예시로 되돌리기</button>
+        <button type="button" class="ghost" id="clear">전부 지우기</button>
+      </div>
+      <p class="note" id="clearConfirm" hidden>정말 전부 지울까요? <button type="button" id="clearYes">지우기</button> <button type="button" id="clearNo" class="ghost">취소</button></p>
+    </section>
+
+    <aside class="preview">
+      <div class="phone" aria-label="정리된 홈 화면 미리보기">
+        <div class="screen-title" id="screenTitle"></div>
+        <div class="grid" id="grid"></div>
+        <div class="pager" id="pager"></div>
+        <div class="dock" id="dock"></div>
+      </div>
+      <section class="panel verdict" id="verdict"></section>
+      <section class="panel">
+        <h2>정리 순서표</h2>
+        <p class="note">폰 옆에 띄워 두고 위에서부터 따라 하면 됩니다.</p>
+        <div class="tools"><button type="button" id="copy">텍스트로 복사</button></div>
+        <textarea id="copybox" readonly aria-label="정리 순서표 텍스트"></textarea>
+      </section>
+    </aside>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const CATS = {
+  "소통": "#3b82f6", "금융·인증": "#0f9d76", "쇼핑": "#e05a2b", "음식·배달": "#d9822b",
+  "이동·지도": "#2a9d8f", "업무": "#5b5bd6", "사진·영상": "#c2417a", "콘텐츠": "#a23b3b",
+  "육아·가족": "#d4a017", "건강": "#3f9142", "생활·공공": "#64748b", "도구": "#475569", "기타": "#7c6f64"
+};
+// 거의 안 써도 지우면 곤란한 카테고리 (인증서, OTP, 공공서비스)
+const VAULT_CATS = new Set(["금융·인증", "생활·공공"]);
+const FREQ = { daily: "매일", weekly: "주 1회+", monthly: "월 1회+", rarely: "거의 안 씀" };
+const GUESS = [
+  [/톡|카카오톡|메시지|라인|텔레그램|왓츠|슬랙|디스코드|메일|gmail|outlook/i, "소통"],
+  [/뱅크|은행|뱅킹|토스|페이|카드|증권|pass|인증|otp|sol|kb|신한|우리|하나|농협/i, "금융·인증"],
+  [/쿠팡이츠|배민|배달|요기요|맥도날드|스타벅스|땡겨요/i, "음식·배달"],
+  [/쿠팡|무신사|마켓|당근|11번가|지마켓|오늘의집|컬리|올리브영|ssg|알리|테무/i, "쇼핑"],
+  [/지도|맵|택시|티맵|코레일|srt|쏘카|버스|지하철|항공|카카오t/i, "이동·지도"],
+  [/notion|노션|슬랙|팀즈|teams|zoom|줌|드라이브|drive|캘린더|오피스|엑셀|워드|피그마|figma/i, "업무"],
+  [/카메라|사진|갤러리|라이트룸|lightroom|vsco|스노우|캡컷/i, "사진·영상"],
+  [/유튜브|넷플릭스|티빙|웨이브|쿠팡플레이|디즈니|멜론|스포티파이|밀리|리디|웹툰|인스타|틱톡|x$|트위터|스레드/i, "콘텐츠"],
+  [/키즈|아이|육아|맘|베이비|어린이집|유치원/i, "육아·가족"],
+  [/건강|헬스|운동|병원|약|수면|캐시워크|스트라바|nike|런/i, "건강"],
+  [/정부24|민원|신분증|국세|홈택스|건강보험|우체국|날씨|아파트|관리비/i, "생활·공공"],
+  [/계산기|메모|시계|설정|파일|번역|스캐너|vpn|키보드/i, "도구"]
+];
+const SAMPLE = [
+  ["카카오톡","소통","daily",true],["카메라","사진·영상","daily",true],["사진","사진·영상","daily",false],["토스","금융·인증","daily",true],
+  ["네이버","콘텐츠","daily",false],["캘린더","업무","daily",true],["메모","도구","daily",false],["키즈노트","육아·가족","daily",false],
+  ["Notion","업무","weekly",false],["슬랙","업무","daily",false],["쿠팡","쇼핑","weekly",false],["배달의민족","음식·배달","weekly",false],
+  ["카카오맵","이동·지도","weekly",false],["유튜브","콘텐츠","weekly",false],["인스타그램","콘텐츠","weekly",false],["당근","쇼핑","weekly",false],
+  ["Lightroom","사진·영상","monthly",false],["코레일톡","이동·지도","monthly",false],["쏘카","이동·지도","rarely",false],["쿠팡이츠","음식·배달","rarely",false],
+  ["요기요","음식·배달","rarely",false],["넷플릭스","콘텐츠","monthly",false],["밀리의서재","콘텐츠","rarely",false],["KB스타뱅킹","금융·인증","rarely",false],
+  ["카카오뱅크","금융·인증","monthly",false],["정부24","생활·공공","rarely",false],["모바일 신분증","생활·공공","monthly",false],["스노우","사진·영상","rarely",false],
+  ["캐시워크","건강","rarely",false],["무신사","쇼핑","rarely",false],["Zoom","업무","monthly",false],["계산기","도구","weekly",false]
+];
+const KEY = "app-organizer-v1";
+let apps = load();
+let filter = "all";
+let page = 0;
+
+function sample() { return SAMPLE.map(([name, cat, freq, star], i) => ({ id: i + 1, name, cat, freq, star })); }
+function load() {
+  try { const raw = localStorage.getItem(KEY); if (raw) { const v = JSON.parse(raw); if (Array.isArray(v)) return v; } } catch (e) {}
+  return sample();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(apps)); } catch (e) {} }
+function guessCat(name) { for (const [re, c] of GUESS) if (re.test(name)) return c; return "기타"; }
+function nextId() { return apps.reduce((m, a) => Math.max(m, a.id), 0) + 1; }
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// 정리 규칙
+function organise() {
+  const daily = apps.filter(a => a.freq === "daily");
+  const ranked = [...daily].sort((a, b) => (b.star - a.star) || (a.id - b.id));
+  // 독: 별표 우선, 매일 쓰는 앱 4개. 매일 앱이 부족하면 별표 붙은 다른 앱으로 채움
+  let dock = ranked.slice(0, 4);
+  if (dock.length < 4) dock = dock.concat(apps.filter(a => a.star && !dock.includes(a)).slice(0, 4 - dock.length));
+  const home = ranked.filter(a => !dock.includes(a));
+  const homeFirst = home.slice(0, 20);
+  const overflow = home.slice(20);
+
+  const vault = apps.filter(a => a.freq === "rarely" && VAULT_CATS.has(a.cat) && !dock.includes(a));
+  const drop = apps.filter(a => a.freq === "rarely" && !VAULT_CATS.has(a.cat) && !dock.includes(a));
+
+  // 폴더: 주간/월간 앱(+첫 화면에 못 들어간 매일 앱)을 카테고리별로. 1개뿐인 카테고리는 '기타'로 합침
+  const rest = apps.filter(a => (a.freq === "weekly" || a.freq === "monthly") && !dock.includes(a)).concat(overflow);
+  const byCat = {};
+  rest.forEach(a => (byCat[a.cat] ||= []).push(a));
+  const folders = [];
+  const misc = [];
+  Object.entries(byCat).forEach(([cat, list]) => {
+    if (list.length >= 2 && cat !== "기타") folders.push({ cat, list: sortFolder(list) });
+    else misc.push(...list);
+  });
+  if (vault.length) folders.push({ cat: "보관함", list: vault, vault: true });
+  if (misc.length) folders.push({ cat: "기타", list: sortFolder(misc) });
+  folders.sort((a, b) => (a.vault ? 1 : 0) - (b.vault ? 1 : 0) || weight(b.list) - weight(a.list));
+  return { dock, homeFirst, folders, drop, vault };
+}
+const W = { daily: 3, weekly: 2, monthly: 1, rarely: 0 };
+function weight(list) { return list.reduce((s, a) => s + W[a.freq], 0); }
+function sortFolder(list) { return [...list].sort((a, b) => W[b.freq] - W[a.freq] || a.name.localeCompare(b.name, "ko")); }
+
+function iconHTML(a) {
+  return `<div class="icon" title="${esc(a.name)}"><div class="sq" style="background:${CATS[a.cat] || CATS["기타"]}">${esc([...a.name][0] || "?")}</div><small>${esc(a.name)}</small></div>`;
+}
+function folderHTML(f) {
+  const dots = f.list.slice(0, 9).map(a => `<i style="background:${CATS[a.cat] || CATS["기타"]}"></i>`).join("");
+  return `<div class="icon folder" title="${esc(f.cat)}: ${esc(f.list.map(a => a.name).join(", "))}"><div class="sq">${dots}</div><small>${esc(f.cat)} ${f.list.length}</small></div>`;
+}
+
+function render() {
+  const r = organise();
+  // 통계
+  const before = Math.max(1, Math.ceil(apps.length / 24));
+  const after = 1 + (r.folders.length ? 1 : 0);
+  $("stats").innerHTML = `
+    <div class="stat"><b>${apps.length}</b><span>앱 전체</span></div>
+    <div class="stat keep"><b>${r.dock.length + r.homeFirst.length}</b><span>첫 화면</span></div>
+    <div class="stat"><b>${r.folders.length}</b><span>폴더</span></div>
+    <div class="stat drop"><b>${r.drop.length}</b><span>삭제 후보</span></div>
+    <div class="stat"><b>${before}→${after}</b><span>홈 화면 장수</span></div>`;
+
+  // 필터
+  const counts = { all: apps.length };
+  Object.keys(FREQ).forEach(f => counts[f] = apps.filter(a => a.freq === f).length);
+  $("filter").innerHTML = [["all", "전체"], ...Object.entries(FREQ)].map(([k, v]) =>
+    `<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter === k}">${v} ${counts[k]}</button>`).join("");
+
+  // 목록
+  const shown = apps.filter(a => filter === "all" || a.freq === filter);
+  $("list").innerHTML = shown.length ? shown.map(a => `
+    <li data-id="${a.id}">
+      <div class="app-name">
+        <button type="button" class="star" data-act="star" aria-pressed="${a.star}" aria-label="독에 고정">★</button>
+        <strong>${esc(a.name)}</strong>
+        <select data-act="cat" aria-label="${esc(a.name)} 카테고리">${Object.keys(CATS).map(c => `<option${c === a.cat ? " selected" : ""}>${c}</option>`).join("")}</select>
+      </div>
+      <div class="row-end">
+        <div class="seg" role="group" aria-label="${esc(a.name)} 사용 빈도">${Object.entries(FREQ).map(([k, v]) =>
+          `<button type="button" data-act="freq" data-f="${k}" aria-pressed="${a.freq === k}">${v}</button>`).join("")}</div>
+        <button type="button" class="x" data-act="del" aria-label="${esc(a.name)} 목록에서 빼기">✕</button>
+      </div>
+    </li>`).join("") : `<li><span class="note">이 빈도에 해당하는 앱이 없습니다.</span></li>`;
+
+  // 폰 미리보기
+  const pages = [{ title: "첫 화면 · 매일 쓰는 앱", html: r.homeFirst.map(iconHTML).join("") || `<div class="empty">'매일'로 표시한 앱이 여기에 놓입니다.</div>` }];
+  if (r.folders.length) pages.push({ title: "둘째 화면 · 카테고리 폴더", html: r.folders.map(folderHTML).join("") });
+  if (page >= pages.length) page = 0;
+  $("screenTitle").textContent = pages[page].title;
+  $("grid").innerHTML = pages[page].html;
+  $("pager").innerHTML = pages.map((p, i) => `<button type="button" data-page="${i}" aria-label="${p.title}" aria-current="${i === page}"></button>`).join("");
+  $("dock").innerHTML = r.dock.map(iconHTML).join("") || `<div class="empty" style="padding:8px 0">별표한 앱이 독에 놓입니다.</div>`;
+
+  // 판정
+  let v = `<h2>지울 것과 남길 것</h2>`;
+  v += r.drop.length
+    ? `<div class="bucket drop"><h3>삭제 후보 ${r.drop.length}개</h3><p>${r.drop.map(a => esc(a.name)).join(", ")}</p><p class="why">거의 안 쓰고 필요하면 다시 받으면 되는 앱. 아이폰은 '사용하지 않는 앱 정리(오프로드)'를 쓰면 데이터는 남습니다.</p></div>`
+    : `<p class="note">'거의 안 씀'으로 표시한 앱이 없습니다.</p>`;
+  if (r.vault.length) v += `<div class="bucket vault"><h3>지우지 말고 보관함 폴더로 ${r.vault.length}개</h3><p>${r.vault.map(a => esc(a.name)).join(", ")}</p><p class="why">은행·인증·공공 앱은 드물게 쓰지만 인증서나 OTP 때문에 급할 때 다시 설치하기 번거롭습니다.</p></div>`;
+  $("verdict").innerHTML = v;
+
+  // 순서표
+  const lines = [];
+  lines.push("1. 삭제");
+  lines.push(r.drop.length ? "   " + r.drop.map(a => a.name).join(", ") : "   없음");
+  lines.push("2. 독(아래 고정줄)");
+  lines.push("   " + (r.dock.map(a => a.name).join(", ") || "없음"));
+  lines.push("3. 첫 화면 (위 왼쪽부터)");
+  lines.push("   " + (r.homeFirst.map(a => a.name).join(", ") || "없음"));
+  lines.push("4. 둘째 화면 폴더");
+  r.folders.forEach(f => lines.push(`   [${f.cat}] ${f.list.map(a => a.name).join(", ")}`));
+  if (!r.folders.length) lines.push("   없음");
+  lines.push("5. 나머지 화면은 비우기 (아이폰: 홈 화면 편집 > 페이지 숨기기, 갤럭시: 홈 화면 길게 눌러 페이지 삭제)");
+  $("copybox").value = lines.join("\n");
+  save();
+}
+
+// 이벤트
+const catSel = $("newCat");
+catSel.innerHTML = Object.keys(CATS).map(c => `<option>${c}</option>`).join("");
+$("newName").addEventListener("input", e => { catSel.value = guessCat(e.target.value); });
+$("addForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const name = $("newName").value.trim();
+  if (!name) return;
+  if (apps.some(a => a.name === name)) { toast(`${name}은(는) 이미 목록에 있습니다.`); return; }
+  apps.unshift({ id: nextId(), name, cat: catSel.value, freq: $("newFreq").value, star: false });
+  $("newName").value = "";
+  filter = "all";
+  render();
+  toast(`${name} 추가됨`);
+});
+$("bulkAdd").addEventListener("click", () => {
+  const names = $("bulk").value.split(/\n|,/).map(s => s.trim()).filter(Boolean);
+  let n = 0;
+  names.forEach(name => {
+    if (apps.some(a => a.name === name)) return;
+    apps.push({ id: nextId(), name, cat: guessCat(name), freq: "weekly", star: false }); n++;
+  });
+  $("bulk").value = "";
+  render();
+  toast(n ? `${n}개 추가됨. 빈도를 고쳐 주세요.` : "새로 넣을 앱이 없습니다.");
+});
+$("filter").addEventListener("click", e => { const b = e.target.closest("[data-filter]"); if (b) { filter = b.dataset.filter; render(); } });
+$("list").addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if (!b || b.tagName === "SELECT") return;
+  const a = apps.find(x => x.id === +b.closest("li").dataset.id); if (!a) return;
+  if (b.dataset.act === "star") a.star = !a.star;
+  if (b.dataset.act === "freq") a.freq = b.dataset.f;
+  if (b.dataset.act === "del") apps = apps.filter(x => x !== a);
+  render();
+});
+$("list").addEventListener("change", e => {
+  if (e.target.dataset.act !== "cat") return;
+  const a = apps.find(x => x.id === +e.target.closest("li").dataset.id);
+  if (a) { a.cat = e.target.value; render(); }
+});
+$("pager").addEventListener("click", e => { const b = e.target.closest("[data-page]"); if (b) { page = +b.dataset.page; render(); } });
+$("grid").addEventListener("click", () => { const n = $("pager").children.length; if (n > 1) { page = (page + 1) % n; render(); } });
+$("sample").addEventListener("click", () => { apps = sample(); filter = "all"; render(); toast("예시 목록으로 되돌렸습니다."); });
+$("clear").addEventListener("click", () => { $("clearConfirm").hidden = false; });
+$("clearNo").addEventListener("click", () => { $("clearConfirm").hidden = true; });
+$("clearYes").addEventListener("click", () => { apps = []; $("clearConfirm").hidden = true; render(); toast("목록을 비웠습니다. 위에서 앱을 추가하세요."); });
+$("copy").addEventListener("click", () => {
+  const box = $("copybox");
+  const fallback = () => { box.focus(); box.select(); toast("텍스트를 선택했습니다. 길게 눌러 복사하세요."); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(box.value).then(() => toast("복사했습니다."), fallback);
+  else fallback();
+});
+let tt;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, 2200); }
+
+render();
+</script>
