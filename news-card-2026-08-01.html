@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>뉴스카드 · 2026년 8월 1일</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:#ffffff; --ink:#0f172a; --sub:#64748b;
+    --line:#e2e8f0; --accent:#e11d48; --accent2:#1d4ed8; --chip:#f1f5f9;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    background:radial-gradient(1200px 600px at 20% -10%,#1e293b,#0f172a);
+    color:var(--ink);min-height:100vh;
+    display:flex;align-items:center;justify-content:center;padding:28px 16px;
+  }
+  .card{
+    width:100%;max-width:600px;background:var(--card);border-radius:22px;overflow:hidden;
+    box-shadow:0 30px 60px -20px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.06);
+  }
+  .head{padding:26px 28px 22px;background:linear-gradient(135deg,#e11d48,#9f1239);color:#fff;position:relative}
+  .head::after{content:"";position:absolute;inset:auto 0 0 0;height:4px;
+    background:repeating-linear-gradient(90deg,#fff 0 18px,transparent 18px 30px);opacity:.35}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:.5px;font-size:14px;opacity:.95}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.25)}
+  .date{margin-top:14px;font-size:30px;font-weight:900;line-height:1.15}
+  .date small{display:block;font-size:14px;font-weight:600;opacity:.85;margin-top:6px}
+  .body{padding:8px 20px 14px}
+  .item{display:flex;gap:14px;padding:18px 8px;border-bottom:1px solid var(--line)}
+  .item:last-child{border-bottom:none}
+  .num{flex:0 0 auto;width:34px;height:34px;border-radius:10px;background:var(--chip);
+    color:var(--accent);font-weight:900;display:flex;align-items:center;justify-content:center;font-size:15px}
+  .txt{flex:1}
+  .cat{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.4px;
+    color:var(--accent2);background:#eff6ff;padding:3px 9px;border-radius:999px;margin-bottom:7px}
+  .cat.eco{color:#0369a1;background:#e0f2fe}
+  .cat.gov{color:#7c3aed;background:#f3e8ff}
+  .cat.soc{color:#b45309;background:#fef3c7}
+  .cat.life{color:#0f766e;background:#ccfbf1}
+  h3{font-size:16.5px;line-height:1.4;font-weight:800;margin-bottom:5px}
+  p{font-size:13.5px;line-height:1.6;color:var(--sub)}
+  .foot{padding:16px 28px 22px;background:#f8fafc;border-top:1px solid var(--line);
+    font-size:11.5px;color:var(--sub);line-height:1.6}
+  .foot b{color:var(--ink)}
+  @media (prefers-color-scheme:dark){
+    :root{--card:#111827;--ink:#f1f5f9;--sub:#94a3b8;--line:#1f2937;--chip:#1f2937}
+    .cat{background:#0b213b}.cat.eco{background:#0b2a3b}.cat.gov{background:#241238}
+    .cat.soc{background:#3a2a0b}.cat.life{background:#0b2f2a}
+    .foot{background:#0b1220;border-color:#1f2937}
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <div class="brand"><span class="dot"></span> HUNTER 뉴스카드</div>
+      <div class="date">2026년 8월 1일 <small>토요일 · 음력 6월 19일 · 오늘의 주요 뉴스</small></div>
+    </div>
+
+    <div class="body">
+      <div class="item">
+        <div class="num">1</div>
+        <div class="txt">
+          <span class="cat eco">경제</span>
+          <h3>7월 수출 실적 발표 … 반도체 주도 호조 지속</h3>
+          <p>산업통상부가 7월 수출 잠정치를 발표. 반도체 수출 강세가 이어지며 상반기 회복세를 뒷받침했다는 평가. (구체 수치는 산업통상부 원자료 확인 필요)</p>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="num">2</div>
+        <div class="txt">
+          <span class="cat eco">경제</span>
+          <h3>원/달러 환율, 7월 말 하락세로 마감</h3>
+          <p>SK하이닉스의 미국 나스닥 상장 기대와 한국은행 기준금리 인상 등이 맞물리며 7월 하순 환율이 진정. 7월 29일 종가 1,446원대 마감.</p>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="num">3</div>
+        <div class="txt">
+          <span class="cat gov">정책</span>
+          <h3>충청권 메가 프로젝트, 392조 원 투자 본격화</h3>
+          <p>대규모 지역 개발 사업이 시동을 걸며 민관합동 TF 첫 회의가 열림. 투자·일자리 파급 효과에 지역사회 관심 집중.</p>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="num">4</div>
+        <div class="txt">
+          <span class="cat soc">사회 · 날씨</span>
+          <h3>기상청, 폭염·무더위 지속 주의 당부</h3>
+          <p>7월 말부터 8월 초까지 연일 이어지는 무더위와 폭염. 온열질환 예방을 위한 야외활동 자제와 수분 섭취 권고.</p>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="num">5</div>
+        <div class="txt">
+          <span class="cat life">생활</span>
+          <h3>주말 생활 정보 · 오늘의 운세</h3>
+          <p>토요일을 맞아 띠별·별자리 운세와 나들이·문화행사 정보에 관심. 폭염 속 실내 여가와 물놀이 수요 증가.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <b>안내</b> — 본 카드는 2026년 8월 1일 공개 웹 검색 결과를 바탕으로 정리했습니다.
+      네트워크 정책상 국내 언론사 직접 접근이 제한되어, 일부 수치·세부 내용은
+      원 출처(산업통상부·한국은행·기상청·언론사 원문)에서 재확인이 필요합니다.
+    </div>
+  </div>
+</body>
+</html>
