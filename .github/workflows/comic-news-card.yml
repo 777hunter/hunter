@@ -1,0 +1,40 @@
+name: Generate comic news card
+
+on:
+  push:
+    branches:
+      - claude/news-card-august-1st-8ivdfe
+    paths:
+      - 'news-*.md'
+  workflow_dispatch: {}
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate comic card
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: node scripts/generate-comic-card.mjs
+
+      - name: Commit and push comic card
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add comic-cards/*.png
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Add auto-generated comic news card"
+            git push
+          fi
