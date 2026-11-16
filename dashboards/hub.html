@@ -91,6 +91,7 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
 .btn:hover{border-color:var(--ink-3)}
 .btn-primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn-primary[disabled]{opacity:.45;cursor:default}
+.btn[disabled]{opacity:.45;cursor:default}
 .btn-sm{padding:4px 9px;font-size:12px}
 .toggle{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2)}
 .status{font-family:var(--mono);font-size:12px}
@@ -220,12 +221,55 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     if (!Array.isArray(s.tombstones)) s.tombstones = [];
     if (typeof s.version !== 'number') s.version = 1;
     if (typeof s.syncedAt !== 'string') s.syncedAt = '';
+    for (var i = 0; i < s.items.length; i++) normItem(s.items[i]);
     return s;
   }
-  var S = loadState();
 
-  var ui = { q: '', cat: 'all', sort: 'updated', admin: false, showHidden: false, edit: null, adding: false, imp: null };
-  var pub = null, capResolved = false, dirty = false, msg = null, saving = false, pending = null;
+  /* ── 항목 상태 ──────────────────────────────────────────
+     new   : 자동으로 들어왔고 사람이 아직 안 봄 (sync.py 편입, 즐겨찾기 가져오기)
+     ready : 사람이 확인함 (편집 확인, 숨김/표시, 수동 추가)
+     목록에서 제거하면 items 에서 빠지고 tombstones 에 id 가 남습니다. 동기화와 가져오기는
+     tombstone 을 다시 넣지 않고, 수동 추가만 되살립니다.
+     hidden·pinned 는 상태와 별개인 표시 옵션입니다. */
+  var ITEM_STATUS = { 'new': 1, ready: 1 };
+  function normItem(it) {
+    if (!ITEM_STATUS[it.status]) it.status = 'ready';
+    it.hidden = !!it.hidden;
+    it.pinned = !!it.pinned;
+    if (!Array.isArray(it.tags)) it.tags = [];
+  }
+  function reviewed(it) { if (it.status === 'new') it.status = 'ready'; }
+
+  var S = loadState();
+  var BASE = clone(S); // 이 화면이 열릴 때의 발행본. 초안 복원 때 무엇을 바꿨는지 가르는 기준
+
+  /* ── 저장 상태 ──────────────────────────────────────────
+       clean ─편집→ dirty ─저장→ saving ─성공→ (런타임이 새 버전으로 다시 엶)
+                     ▲                 ├─일시 오류→ dirty   (다시 저장 가능)
+                     └─────────────────┤
+                                       ├─충돌→ conflict    (이긴 버전으로 다시 열림, 초안 보존)
+                                       └─권한 없음→ readonly
+     saving·conflict·readonly 에서는 편집하지 않습니다. 화면에는 #root[data-save-state] 로 드러납니다. */
+  var SAVE_FLOW = {
+    clean:    { edit: 'dirty', readonly: 'readonly' },
+    dirty:    { edit: 'dirty', save: 'saving', readonly: 'readonly' },
+    saving:   { ok: 'clean', fail: 'dirty', conflict: 'conflict', readonly: 'readonly' },
+    conflict: {},
+    readonly: {}
+  };
+  var saveState = 'clean';
+  function go(ev) {
+    var to = SAVE_FLOW[saveState][ev];
+    if (!to) return false;
+    saveState = to;
+    return true;
+  }
+  function idle() { return saveState === 'clean' || saveState === 'dirty'; }
+  function editable() { return !!pub && idle(); }
+
+  var ui = { q: '', cat: 'all', sort: 'updated', admin: false, showHidden: false,
+             edit: null, editDraft: {}, adding: false, addDraft: {}, imp: null };
+  var pub = null, msg = null, pending = null;
 
   function pref(k, v) {
     try {
@@ -237,9 +281,18 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
   var savedSort = pref('sort'); if (savedSort) ui.sort = savedSort;
   var savedCat = pref('cat'); if (savedCat) ui.cat = savedCat;
 
+  /* 초안: 저장 전 편집을 탭이 다시 열려도 잃지 않게 sessionStorage 에 둡니다.
+     { v: 2, base: 편집을 시작한 발행본, draft: 편집한 결과 } 로 남겨, 복원할 때 통째로 덮지 않고
+     base→draft 사이에 바뀐 것만 지금 발행본 위에 다시 얹습니다(충돌 뒤 다른 사람·동기화가 넣은
+     항목을 지우지 않도록). 얹어도 바뀌는 게 없으면 이미 저장된 것이므로 조용히 버립니다. */
   try {
     var d = sessionStorage.getItem('hub.draft');
-    if (d) pending = JSON.parse(d);
+    if (d) {
+      d = JSON.parse(d);
+      var rb = d && d.v === 2 ? rebase(S, d.base, d.draft) : (d && Array.isArray(d.items) ? rebase(S, null, d) : null);
+      if (rb && rb.changes) pending = rb;
+      else sessionStorage.removeItem('hub.draft');
+    }
   } catch (e) { pending = null; }
 
   /* ── 유틸 ───────────────────────────────────────────── */
@@ -269,6 +322,39 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     return m ? m[1].toLowerCase() : '';
   }
   function mark(text, cls) { msg = text ? { text: text, cls: cls || '' } : null; }
+  function clone(v) { return JSON.parse(JSON.stringify(v)); }
+  function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+
+  // cur(지금 발행본) 위에 base→draft 변경분만 다시 얹습니다. base 가 없으면(옛 초안) 추가·수정만 얹습니다.
+  function rebase(cur, base, draft) {
+    var out = clone(cur), n = 0, i, k, d, b, c;
+    var idx = function (list) { var m = {}; for (var j = 0; j < (list || []).length; j++) m[list[j].id] = list[j]; return m; };
+    var baseBy = idx(base && base.items), curBy = idx(out.items), draftBy = idx(draft.items);
+    var tombs = {}; for (i = 0; i < out.tombstones.length; i++) tombs[out.tombstones[i]] = 1;
+    for (i = 0; i < draft.items.length; i++) {
+      d = draft.items[i]; b = base ? baseBy[d.id] : curBy[d.id]; c = curBy[d.id];
+      if (!b) {                                   // 초안에서 새로 넣은 항목
+        if (!c && !tombs[d.id]) { out.items.push(clone(d)); curBy[d.id] = d; n++; }
+        continue;
+      }
+      if (!c) continue;                           // 그 사이 다른 곳에서 제거됨 → 그 결정을 따름
+      var keys = {}; for (k in d) keys[k] = 1; for (k in b) keys[k] = 1;
+      for (k in keys) if (!same(d[k], b[k]) && !same(c[k], d[k])) { c[k] = clone(d[k]); n++; }
+    }
+    if (base) {
+      for (i = 0; i < base.items.length; i++) {   // 초안에서 목록에서 제거한 항목
+        b = base.items[i];
+        if (draftBy[b.id] || !curBy[b.id]) continue;
+        out.items = out.items.filter(function (x) { return x.id !== b.id; });
+        n++;
+      }
+      var bt = {}; for (i = 0; i < (base.tombstones || []).length; i++) bt[base.tombstones[i]] = 1;
+      var dt = {}; for (i = 0; i < (draft.tombstones || []).length; i++) dt[draft.tombstones[i]] = 1;
+      for (k in dt) if (!bt[k] && !tombs[k]) { out.tombstones.push(k); n++; }
+      for (k in bt) if (!dt[k] && tombs[k]) { out.tombstones = out.tombstones.filter(function (x) { return x !== k; }); n++; }
+    }
+    return { state: out, changes: n };
+  }
 
   /* ── 필터·정렬 ──────────────────────────────────────── */
   function matches(it) {
@@ -341,17 +427,21 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     return out;
   }
 
+  // 폼 값은 화면이 다시 그려져도 남도록 ui.editDraft / ui.addDraft 에 따로 둡니다.
+  function fv(draft, name, dflt) { return Object.prototype.hasOwnProperty.call(draft, name) ? draft[name] : dflt; }
+
   function editForm(it) {
+    var e = ui.editDraft;
     return '<div class="form">' +
-      '<label>제목<input type="text" data-f="title" value="' + esc(it.title) + '"></label>' +
-      '<label>무엇을 하기 위한 것인지<textarea data-f="desc" placeholder="한 줄로 용도를 적어 주세요">' + esc(it.desc) + '</textarea></label>' +
+      '<label>제목<input type="text" data-f="title" value="' + esc(fv(e, 'title', it.title)) + '"></label>' +
+      '<label>무엇을 하기 위한 것인지<textarea data-f="desc" placeholder="한 줄로 용도를 적어 주세요">' + esc(fv(e, 'desc', it.desc)) + '</textarea></label>' +
       '<div class="pair">' +
-        '<label>분류<select data-f="cat">' + optionList(catId(it.cat)) + '</select></label>' +
-        '<label>태그 (쉼표로 구분)<input type="text" data-f="tags" value="' + esc((it.tags || []).join(', ')) + '"></label>' +
+        '<label>분류<select data-f="cat">' + optionList(catId(fv(e, 'cat', it.cat))) + '</select></label>' +
+        '<label>태그 (쉼표로 구분)<input type="text" data-f="tags" value="' + esc(fv(e, 'tags', (it.tags || []).join(', '))) + '"></label>' +
       '</div>' +
       '<div class="pair">' +
-        '<label>아이콘<input type="text" data-f="icon" value="' + esc(it.icon || '') + '" maxlength="4"></label>' +
-        '<label>주소<input type="text" data-f="url" value="' + esc(it.url) + '"></label>' +
+        '<label>아이콘<input type="text" data-f="icon" value="' + esc(fv(e, 'icon', it.icon || '')) + '" maxlength="4"></label>' +
+        '<label>주소<input type="text" data-f="url" value="' + esc(fv(e, 'url', it.url)) + '"></label>' +
       '</div>' +
       '<div class="rowbtns">' +
         '<button class="btn btn-primary btn-sm" type="button" data-act="apply">확인</button>' +
@@ -384,9 +474,10 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     out += '</div><div class="actions">';
     out += '<a class="open" href="' + esc(it.url) + '" target="_blank" rel="noopener">열기 ↗</a>';
     if (ui.admin && !editing) {
-      out += '<button class="btn btn-sm" type="button" data-act="hide">' + (it.hidden ? '표시' : '숨김') + '</button>' +
-        '<button class="btn btn-sm" type="button" data-act="pin">' + (it.pinned ? '고정 해제' : '고정') + '</button>' +
-        '<button class="btn btn-sm" type="button" data-act="edit">편집</button>';
+      var dis = editable() ? '' : ' disabled';
+      out += '<button class="btn btn-sm" type="button" data-act="hide"' + dis + '>' + (it.hidden ? '표시' : '숨김') + '</button>' +
+        '<button class="btn btn-sm" type="button" data-act="pin"' + dis + '>' + (it.pinned ? '고정 해제' : '고정') + '</button>' +
+        '<button class="btn btn-sm" type="button" data-act="edit"' + dis + '>편집</button>';
     }
     return out + '</div></li>';
   }
@@ -445,9 +536,9 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
         id = bmId(marks[i].url); key = normUrl(marks[i].url);
         if (seen[key]) continue;
         seen[key] = 1;
-        var dup = !!(ids[id] || urls[key] || tomb[id] || id === String(S.selfId || '').toLowerCase());
+        var why = tomb[id] ? 'tomb' : (ids[id] || urls[key] || id === String(S.selfId || '').toLowerCase()) ? 'dup' : '';
         rows.push({ title: marks[i].title, url: marks[i].url, folder: marks[i].folder,
-                    id: id, dup: dup, sel: false });
+                    id: id, dup: !!why, why: why, sel: false });
       }
       if (!rows.length) {
         ui.imp = null;
@@ -494,7 +585,7 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     out += '<dl class="stats imp-stats">' +
       '<div class="stat"><dt>파일 안</dt><dd>' + tot + '</dd></div>' +
       '<div class="stat"><dt>새 항목</dt><dd>' + (tot - dup) + '</dd></div>' +
-      '<div class="stat"><dt>이미 등록</dt><dd>' + dup + '</dd></div>' +
+      '<div class="stat"><dt>이미 등록·제외</dt><dd>' + dup + '</dd></div>' +
       '<div class="stat is-alert"><dt>선택(전체)</dt><dd class="imp-sel-count">' + impSelected() + '</dd></div>' +
       '</dl>';
     out += '<div class="chips imp-chips"><button class="chip" type="button" data-act="impfolder" data-v="all"' +
@@ -520,7 +611,7 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
         '<div><div class="imp-t">' + esc(r.title) + '</div>' +
         '<div class="imp-u">' + esc(r.url) + '</div></div>' +
         '<div class="imp-side">' + (r.folder ? '<span class="imp-f">' + esc(r.folder) + '</span>' : '') +
-        (r.dup ? '<span class="flag flag-hide">이미 등록</span>' : '') + '</div></div>';
+        (r.dup ? '<span class="flag flag-hide">' + (r.why === 'tomb' ? '제외됨' : '이미 등록') + '</span>' : '') + '</div></div>';
     }
     out += '</div>';
     out += '<div class="rowbtns">' +
@@ -535,23 +626,26 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     out += '<p class="note">숨김·분류·설명은 여기서 바꾸고 <b>저장</b>을 눌러야 모두에게 반영됩니다.</p>';
     out += '<label class="toggle"><input type="checkbox" data-act="showhidden"' + (ui.showHidden ? ' checked' : '') +
       '> 숨긴 항목도 보기</label>';
-    out += '<button class="btn btn-sm" type="button" data-act="addform">＋ 대시보드 추가</button>';
+    var dis = editable() ? '' : ' disabled';
+    out += '<button class="btn btn-sm" type="button" data-act="addform"' + dis + '>＋ 대시보드 추가</button>';
     out += '<label class="btn btn-sm imp-open">즐겨찾기 가져오기' +
-      '<input type="file" accept=".html,.htm,text/html" data-act="bmfile"></label>';
+      '<input type="file" accept=".html,.htm,text/html" data-act="bmfile"' + dis + '></label>';
+    var label = { clean: '저장됨', dirty: '저장', saving: '저장 중…', conflict: '다시 여는 중…', readonly: '보기 전용' }[saveState];
     out += '<button class="btn btn-primary btn-sm" type="button" data-act="save"' +
-      (dirty && !saving ? '' : ' disabled') + '>' + (saving ? '저장 중…' : (dirty ? '저장' : '저장됨')) + '</button>';
+      (saveState === 'dirty' && pub ? '' : ' disabled') + '>' + label + '</button>';
     if (msg) out += '<span class="status ' + esc(msg.cls) + '">' + esc(msg.text) + '</span>';
     out += '</div>';
     if (ui.adding) {
+      var a = ui.addDraft;
       out += '<div class="add"><h2>대시보드 추가</h2><div class="form">' +
-        '<label>주소<input type="text" data-n="url" placeholder="https://claude.ai/code/artifact/..."></label>' +
-        '<label>제목<input type="text" data-n="title" placeholder="대시보드 이름"></label>' +
-        '<label>무엇을 하기 위한 것인지<textarea data-n="desc" placeholder="한 줄 용도"></textarea></label>' +
+        '<label>주소<input type="text" data-n="url" placeholder="https://claude.ai/code/artifact/..." value="' + esc(fv(a, 'url', '')) + '"></label>' +
+        '<label>제목<input type="text" data-n="title" placeholder="대시보드 이름" value="' + esc(fv(a, 'title', '')) + '"></label>' +
+        '<label>무엇을 하기 위한 것인지<textarea data-n="desc" placeholder="한 줄 용도">' + esc(fv(a, 'desc', '')) + '</textarea></label>' +
         '<div class="pair">' +
-          '<label>분류<select data-n="cat">' + optionList('unsorted') + '</select></label>' +
-          '<label>아이콘<input type="text" data-n="icon" value="▤" maxlength="4"></label>' +
+          '<label>분류<select data-n="cat">' + optionList(fv(a, 'cat', 'unsorted')) + '</select></label>' +
+          '<label>아이콘<input type="text" data-n="icon" value="' + esc(fv(a, 'icon', '▤')) + '" maxlength="4"></label>' +
         '</div>' +
-        '<div class="rowbtns"><button class="btn btn-primary btn-sm" type="button" data-act="addsave">추가</button>' +
+        '<div class="rowbtns"><button class="btn btn-primary btn-sm" type="button" data-act="addsave"' + dis + '>추가</button>' +
         '<button class="btn btn-sm" type="button" data-act="addcancel">취소</button></div>' +
         '</div></div>';
     }
@@ -570,7 +664,7 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
       '</div>' + statBlock() + '</header>';
 
     if (pending) {
-      h += '<div class="recover"><span>저장하지 못한 편집 내용이 남아 있습니다.</span>' +
+      h += '<div class="recover"><span>저장하지 못한 편집 ' + pending.changes + '건이 남아 있습니다. 복원하면 지금 버전 위에 다시 얹습니다.</span>' +
         '<button class="btn btn-sm" type="button" data-act="restore">복원</button>' +
         '<button class="btn btn-sm" type="button" data-act="discard">버리기</button></div>';
     }
@@ -585,6 +679,7 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     h += '</div>';
 
     if (ui.admin) h += adminPanel();
+    else if (msg) h += '<div class="adm"><span class="status ' + esc(msg.cls) + '">' + esc(msg.text) + '</span></div>';
 
     if (!list.length) {
       h += '<div class="empty-state">조건에 맞는 대시보드가 없습니다.</div>';
@@ -601,6 +696,8 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
       '</footer></div>';
 
     root.innerHTML = h;
+    root.setAttribute('data-save-state', saveState);
+    root.setAttribute('data-admin', ui.admin ? 'on' : 'off');
   }
 
   /* ── 문서 재생성 ────────────────────────────────────── */
@@ -620,33 +717,37 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
   }
 
   function touch() {
-    dirty = true;
-    try { sessionStorage.setItem('hub.draft', JSON.stringify(S)); } catch (e) {}
+    go('edit');
+    try { sessionStorage.setItem('hub.draft', JSON.stringify({ v: 2, base: BASE, draft: S })); } catch (e) {}
   }
 
+  var READONLY_CODES = { not_writer: 1, not_granted: 1, not_declared: 1, consent_required: 1,
+                         capability_disabled: 1, capability_removed: 1 };
+
   function save() {
-    if (!pub || saving) return;
-    saving = true; mark('저장 중…', ''); render();
+    if (!pub || !go('save')) return;
+    mark('저장 중…', ''); render();
     S.syncedAt = S.syncedAt || today();
     pub.publish(buildDoc()).then(function () {
-      saving = false; dirty = false;
+      // 보통은 런타임이 먼저 새 버전으로 다시 엽니다. 여기까지 오면 그 전에 응답이 온 경우
+      go('ok');
       try { sessionStorage.removeItem('hub.draft'); } catch (e) {}
+      BASE = clone(S);
       mark('저장했습니다.', 'ok'); render();
     }, function (err) {
-      saving = false;
       var code = (err && err.code) || 'upstream_error';
       if (code === 'conflict') {
-        mark('다른 곳에서 먼저 저장했습니다. 최신 버전을 다시 불러옵니다.', 'warn');
-      } else if (code === 'not_writer' || code === 'not_granted' || code === 'not_declared' ||
-                 code === 'consent_required' || code === 'capability_disabled' || code === 'capability_removed') {
-        pub = null; ui.admin = false;
+        go('conflict');
+        mark('다른 곳에서 먼저 저장했습니다. 최신 버전으로 다시 열리면 내 편집을 그 위에 복원할 수 있습니다.', 'warn');
+      } else if (READONLY_CODES[code]) {
+        go('readonly');
+        pub = null; ui.admin = false; ui.edit = null; ui.adding = false; ui.imp = null;
         mark('이 화면은 보기 전용입니다. 편집 권한이 있는 계정에서 저장해 주세요.', 'err');
-      } else if (code === 'rate_limited') {
-        mark('저장이 너무 잦습니다. 잠시 후 다시 눌러 주세요.', 'warn');
-      } else if (code === 'too_large') {
-        mark('내용이 너무 큽니다. 항목을 정리한 뒤 저장해 주세요.', 'err');
       } else {
-        mark('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.', 'err');
+        go('fail');
+        if (code === 'rate_limited') mark('저장이 너무 잦습니다. 잠시 후 다시 눌러 주세요.', 'warn');
+        else if (code === 'too_large') mark('내용이 너무 큽니다. 항목을 정리한 뒤 저장해 주세요.', 'err');
+        else mark('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.', 'err');
       }
       render();
     });
@@ -655,6 +756,9 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
   /* ── 이벤트 ─────────────────────────────────────────── */
   root.addEventListener('input', function (e) {
     var t = e.target, act = t.getAttribute('data-act');
+    var fName = t.getAttribute('data-f'), nName = t.getAttribute('data-n');
+    if (fName) { ui.editDraft[fName] = t.value; return; }
+    if (nName) { ui.addDraft[nName] = t.value; return; }
     if (act === 'q') { ui.q = t.value; var pos = t.selectionStart; render();
       var box = root.querySelector('.search'); if (box) { box.focus(); try { box.setSelectionRange(pos, pos); } catch (x) {} } }
   });
@@ -665,7 +769,7 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     else if (act === 'showhidden') { ui.showHidden = t.checked; render(); }
     else if (act === 'bmfile') {
       var file = t.files && t.files[0];
-      if (file) loadBookmarks(file);
+      if (file && editable()) loadBookmarks(file);
       t.value = '';
     }
     else if (act === 'imptoggle') {
@@ -680,10 +784,13 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
     var act = t.getAttribute('data-act');
     var li = e.target.closest('.row');
     var it = li ? byId(li.getAttribute('data-id')) : null;
+    var MUTATES = { addform: 1, impadd: 1, hide: 1, pin: 1, edit: 1, apply: 1, drop: 1, addsave: 1 };
+    if (MUTATES[act] && !editable()) return;
+    if (act === 'restore' && !idle()) return;
 
     if (act === 'cat') { ui.cat = t.getAttribute('data-v'); pref('cat', ui.cat); render(); }
     else if (act === 'admin') { ui.admin = !ui.admin; ui.edit = null; ui.adding = false; ui.imp = null; mark(null); render(); }
-    else if (act === 'addform') { ui.adding = !ui.adding; render(); }
+    else if (act === 'addform') { ui.adding = !ui.adding; ui.addDraft = {}; render(); }
     else if (act === 'impfolder' && ui.imp) { ui.imp.folder = t.getAttribute('data-v'); render(); }
     else if (act === 'impcancel') { ui.imp = null; render(); }
     else if ((act === 'impall' || act === 'impnone' || act === 'impclear') && ui.imp) {
@@ -712,18 +819,18 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
       else mark('선택한 항목이 없습니다.', 'warn');
       render();
     }
-    else if (act === 'addcancel') { ui.adding = false; render(); }
+    else if (act === 'addcancel') { ui.adding = false; ui.addDraft = {}; render(); }
     else if (act === 'save') { save(); }
     else if (act === 'restore') {
-      if (pending) { S = pending; pending = null; dirty = true; ui.admin = !!pub; mark('복원했습니다. 저장을 눌러 반영하세요.', 'warn'); render(); }
+      if (pending) { S = pending.state; pending = null; touch(); ui.admin = !!pub; mark('복원했습니다. 저장을 눌러 반영하세요.', 'warn'); render(); }
     }
     else if (act === 'discard') {
       pending = null; try { sessionStorage.removeItem('hub.draft'); } catch (x) {} render();
     }
-    else if (act === 'hide' && it) { it.hidden = !it.hidden; if (it.status === 'new') it.status = 'ready'; touch(); render(); }
+    else if (act === 'hide' && it) { it.hidden = !it.hidden; reviewed(it); touch(); render(); }
     else if (act === 'pin' && it) { it.pinned = !it.pinned; touch(); render(); }
-    else if (act === 'edit' && it) { ui.edit = it.id; render(); }
-    else if (act === 'cancel') { ui.edit = null; render(); }
+    else if (act === 'edit' && it) { ui.edit = it.id; ui.editDraft = {}; render(); }
+    else if (act === 'cancel') { ui.edit = null; ui.editDraft = {}; render(); }
     else if (act === 'apply' && it) {
       var f = function (n) { var el = li.querySelector('[data-f="' + n + '"]'); return el ? el.value.trim() : ''; };
       var nt = f('title'); if (nt && nt !== it.title) it.titleLocked = true;
@@ -733,14 +840,14 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
       it.icon = f('icon') || it.icon;
       it.url = f('url') || it.url;
       it.tags = f('tags').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-      it.status = 'ready';
-      ui.edit = null; touch(); render();
+      reviewed(it);
+      ui.edit = null; ui.editDraft = {}; touch(); render();
     }
     else if (act === 'drop' && it) {
       if (!window.confirm('목록에서 제거합니다. 대시보드 자체는 지워지지 않고, 다음 동기화 때 다시 들어오지도 않습니다.')) return;
       if (S.tombstones.indexOf(it.id) < 0) S.tombstones.push(it.id);
       S.items = S.items.filter(function (x) { return x.id !== it.id; });
-      ui.edit = null; touch(); render();
+      ui.edit = null; ui.editDraft = {}; touch(); render();
     }
     else if (act === 'addsave') {
       var g = function (n) { var el = root.querySelector('[data-n="' + n + '"]'); return el ? el.value.trim() : ''; };
@@ -753,12 +860,13 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
         hidden: false, pinned: false, status: 'ready', titleLocked: true
       });
       S.tombstones = S.tombstones.filter(function (x) { return x !== id; });
-      ui.adding = false; mark('추가했습니다. 저장을 눌러 반영하세요.', 'ok'); touch(); render();
+      ui.adding = false; ui.addDraft = {}; mark('추가했습니다. 저장을 눌러 반영하세요.', 'ok'); touch(); render();
     }
   });
 
   window.addEventListener('beforeunload', function (e) {
-    if (!dirty) return;
+    // 저장할 수 있는데 안 한 경우만 묻습니다. 저장 중(곧 새 버전으로 다시 열림)·보기 전용은 묻지 않음
+    if (saveState !== 'dirty' || !pub) return;
     e.preventDefault();
     e.returnValue = '';
   });
@@ -767,8 +875,8 @@ select.sort{padding:7px 10px;font:inherit;font-size:13px;color:var(--ink-2);
 
   if (window.claude && typeof window.claude.use === 'function') {
     window.claude.use('artifact').then(function (ns) {
-      capResolved = true; pub = ns || null; render();
-    }, function () { capResolved = true; render(); });
+      pub = ns || null; render();
+    }, function () { render(); });
   }
 })();
 </script>

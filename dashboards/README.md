@@ -31,6 +31,45 @@
 > 숨김은 **정리용**이지 보안 기능이 아닙니다. 숨긴 항목도 페이지 소스의 레지스트리에는
 > 남아 있고, 원래 대시보드 주소를 아는 사람은 그대로 열 수 있습니다.
 
+## 상태 규칙
+
+허브에는 상태가 두 가지 있습니다. 화면 코드(`hub.html`)와 `sync.py`가 같은 규칙을 씁니다.
+
+**항목 상태** (`status`)
+
+| 상태 | 뜻 | 들어오는 길 |
+| --- | --- | --- |
+| `new` | 자동으로 들어왔고 사람이 아직 안 봄. `신규 편입` 표시 | `sync.py` 편입, 즐겨찾기 가져오기 |
+| `ready` | 사람이 확인함 | 편집 확인, 숨김/표시, 수동 추가 |
+
+숨김·고정은 상태와 별개인 표시 옵션입니다. `목록에서 제거`하면 항목이 빠지고 id가
+`tombstones`에 남습니다. 동기화와 즐겨찾기 가져오기는 tombstone을 다시 넣지 않고(가져오기
+화면에는 `제외됨`으로 보임), 수동 추가만 되살립니다.
+
+**저장 상태** (화면의 `#root[data-save-state]`)
+
+```
+clean ─편집→ dirty ─저장→ saving ─성공→ 런타임이 새 버전으로 다시 엶
+               ▲                 ├─일시 오류(rate_limited 등)→ dirty
+               └─────────────────┤
+                                 ├─충돌→ conflict  (이긴 버전으로 다시 열림)
+                                 └─권한 없음→ readonly
+```
+
+- `saving`·`conflict`·`readonly`에서는 편집 버튼이 잠깁니다.
+- 떠나기 경고는 `dirty`에서만 뜹니다.
+- 저장 전 편집은 탭의 sessionStorage에 `{base, draft}`로 남습니다. 다시 열렸을 때 지금
+  발행본 위에 **바뀐 부분만** 다시 얹을 수 있으면 `복원` 안내가 뜹니다. 그래서 충돌 뒤
+  복원해도 그 사이 동기화나 다른 관리자가 넣은 항목을 지우지 않습니다. 얹어도 바뀌는 게
+  없으면(이미 저장됨) 안내 없이 버립니다.
+
+**데이터와 코드의 출처**
+
+- 레지스트리(데이터)는 **발행본**이 기준입니다. 화면에서 저장한 값이 거기 있습니다.
+- 화면 코드(`<style id="appcss">`, `<script id="app">`)는 **저장소의 `hub.html`**이 기준입니다.
+- `sync.py`는 발행본 데이터를 저장소 코드에 얹어 씁니다. 두 코드가 다르면 `앱 코드 갱신`을
+  변경으로 보고하므로, 저장소에서 고친 코드는 다음 동기화 때 발행됩니다.
+
 ## 새 대시보드 자동 편입
 
 새 대시보드를 만들면 아래 동기화가 돌 때 `신규 편입` 표시와 함께 `미분류`로 자동으로
@@ -60,6 +99,25 @@ Claude 세션에서 이 순서로 실행합니다. (정기 실행으로 걸어 �
    저장소에도 커밋합니다. 변경이 없으면 아무것도 하지 않습니다.
 
 `--dry-run` 을 붙이면 무엇이 바뀌는지만 확인할 수 있습니다.
+
+자동화(에이전트·CI)에서는 사람이 읽는 줄 대신 `--json` 한 줄을 읽는 편이 안전합니다.
+
+```bash
+python3 dashboards/sync.py --html pub.html --list artifacts.json --out dashboards/hub.html --json
+# {"changed": true, "added": [...], "updated": [...], "ignored": [...], "code_updated": false, "problems": [], ...}
+
+python3 dashboards/sync.py --check --html dashboards/hub.html   # 불변식 위반이 있으면 종료 코드 1
+```
+
+`--check`가 보는 것: id 중복·누락, `new`/`ready` 외의 상태, tombstone인데 등록된 항목,
+없는 분류, 주소 없는 항목. 동기화 중에 발견하면 stderr에 `경고:`로 알리고 작업은 계속합니다.
+
+### 테스트
+
+```bash
+python3 -m unittest discover -s dashboards/tests   # sync.py 규칙
+node dashboards/tests/hub_states.mjs               # 화면의 저장·초안·편집 상태 (Playwright)
+```
 
 ### 정기 실행
 
