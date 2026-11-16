@@ -1,0 +1,191 @@
+From 9d7e183375807f68d838fde5620ff103e07136fc Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 14:04:18 +0000
+Subject: [PATCH] =?UTF-8?q?=EB=A7=8C=ED=99=94=20=EB=89=B4=EC=8A=A4?=
+ =?UTF-8?q?=EC=B9=B4=EB=93=9C:=20=EC=8B=A4=ED=8C=A8=ED=95=9C=20=EB=82=A0?=
+ =?UTF-8?q?=EC=A7=9C=20=EB=8B=A4=EC=8B=9C=20=EC=8B=9C=EB=8F=84,=20?=
+ =?UTF-8?q?=ED=95=9C=EB=8F=84=20=EC=B4=88=EA=B3=BC=EB=A5=BC=20=EB=94=B0?=
+ =?UTF-8?q?=EB=A1=9C=20=EC=95=8C=EB=A6=BC,=20=ED=91=B8=EC=8B=9C=20?=
+ =?UTF-8?q?=EA=B2=BD=EC=9F=81=20=EB=8C=80=EB=B9=84?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- 최신 파일 하나만 보던 것을 최근 3개 뉴스 파일 중 카드가 없는 날짜로 바꿈.
+  하루 실패해도 다음 실행에서 다시 만든다
+- Gemini 429(한도 초과)는 종료 코드 75와 ::error 주석으로, 다른 오류는 1로 구분
+- --plan: API 키 없이 무엇을 만들지 JSON 으로 출력
+- 워크플로: 생성이 일부 실패해도 만든 카드는 커밋, 푸시 전에 rebase 하고 3번까지 재시도
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011biGVicmovHx6Eq61AcEuC
+---
+ .github/workflows/comic-news-card.yml | 10 ++-
+ scripts/generate-comic-card.mjs       | 89 +++++++++++++++++++--------
+ 2 files changed, 71 insertions(+), 28 deletions(-)
+
+diff --git a/.github/workflows/comic-news-card.yml b/.github/workflows/comic-news-card.yml
+index 1983448..68c4cb6 100644
+--- a/.github/workflows/comic-news-card.yml
++++ b/.github/workflows/comic-news-card.yml
+@@ -28,6 +28,8 @@ jobs:
+         run: node scripts/generate-comic-card.mjs
+ 
+       - name: Commit and push comic card
++        # 여러 날짜 중 일부만 만들고 한도에 걸려도, 만든 카드는 올린다
++        if: ${{ !cancelled() }}
+         run: |
+           git config user.name "github-actions[bot]"
+           git config user.email "github-actions[bot]@users.noreply.github.com"
+@@ -36,5 +38,11 @@ jobs:
+             echo "No changes to commit"
+           else
+             git commit -m "Add auto-generated comic news card"
+-            git push
++            # 생성하는 동안 뉴스 루틴이 새 커밋을 올렸을 수 있으므로 그 위에 얹어서 올린다
++            pushed=0
++            for i in 1 2 3; do
++              if git pull --rebase origin "${{ github.ref_name }}" && git push; then pushed=1; break; fi
++              sleep $((i * 5))
++            done
++            [ "$pushed" = 1 ]
+           fi
+diff --git a/scripts/generate-comic-card.mjs b/scripts/generate-comic-card.mjs
+index f092eaa..aaa5a02 100644
+--- a/scripts/generate-comic-card.mjs
++++ b/scripts/generate-comic-card.mjs
+@@ -1,22 +1,28 @@
+-// Generates a comic-book style news card image from the latest news-YYYY-MM-DD.md
++// Generates comic-book style news card images from news-YYYY-MM-DD.md files
+ // using the Gemini image generation API. Run via GitHub Actions with GEMINI_API_KEY set.
++//
++// 최근 RECENT_FILES 개 뉴스 파일 중 카드가 아직 없는 날짜를 최신순으로 만든다. 그래서 어떤
++// 날 실패해도 다음 실행에서 다시 시도한다. 한도 초과(429)를 만나면 거기서 멈춘다.
++//
++//   node scripts/generate-comic-card.mjs          # 생성
++//   node scripts/generate-comic-card.mjs --plan   # 무엇을 만들지 출력만 (API 키 불필요)
++//
++// 종료 코드: 0 성공(또는 만들 것 없음), 1 오류, 75 Gemini 한도 초과(일시적, 다음 실행에서 재시도)
+ import fs from 'node:fs';
+ import path from 'node:path';
+ 
+-const API_KEY = process.env.GEMINI_API_KEY;
+-if (!API_KEY) {
+-  console.error('GEMINI_API_KEY is not set');
+-  process.exit(1);
+-}
++const RECENT_FILES = 3;
++const EXIT_ERROR = 1;
++const EXIT_QUOTA = 75; // sysexits EX_TEMPFAIL
+ 
+ const repoRoot = process.cwd();
++const planOnly = process.argv.includes('--plan');
+ 
+-function findLatestNewsFile(dir) {
+-  const files = fs
++function newsFiles(dir) {
++  return fs
+     .readdirSync(dir)
+-    .filter((f) => /^news-\d{4}-\d{2}-\d{2}\.md$/.test(f));
+-  files.sort();
+-  return files[files.length - 1];
++    .filter((f) => /^news-\d{4}-\d{2}-\d{2}\.md$/.test(f))
++    .sort();
+ }
+ 
+ function extractHeadlines(content) {
+@@ -37,27 +43,54 @@ function extractDate(content, fallbackFile) {
+   return fallbackFile.replace('news-', '').replace('.md', '');
+ }
+ 
+-const latestFile = findLatestNewsFile(repoRoot);
+-if (!latestFile) {
++const files = newsFiles(repoRoot);
++if (!files.length) {
+   console.error('No news-*.md file found');
+-  process.exit(1);
++  process.exit(EXIT_ERROR);
+ }
+ 
+-const content = fs.readFileSync(path.join(repoRoot, latestFile), 'utf-8');
+-const headlines = extractHeadlines(content);
+-const dateStr = extractDate(content, latestFile);
+-
+-if (headlines.length === 0) {
+-  console.error('No headlines extracted from', latestFile);
+-  process.exit(1);
++// 최신 파일부터, 카드가 없는 날짜만
++const todo = [];
++for (const file of files.slice(-RECENT_FILES).reverse()) {
++  const content = fs.readFileSync(path.join(repoRoot, file), 'utf-8');
++  const dateStr = extractDate(content, file);
++  const outPath = path.join(repoRoot, 'comic-cards', `comic-${dateStr}.png`);
++  if (fs.existsSync(outPath)) continue;
++  todo.push({ file, dateStr, outPath, headlines: extractHeadlines(content) });
+ }
+ 
+-const outPath = path.join(repoRoot, 'comic-cards', `comic-${dateStr}.png`);
+-if (fs.existsSync(outPath)) {
+-  console.log('Comic card already exists for', dateStr, '- skipping');
++if (planOnly) {
++  console.log(JSON.stringify(todo.map(({ file, dateStr, headlines }) => ({ file, date: dateStr, headlines: headlines.length }))));
++  process.exit(0);
++}
++if (!todo.length) {
++  console.log(`Comic cards already exist for the latest ${RECENT_FILES} news files - nothing to do`);
+   process.exit(0);
+ }
+ 
++const API_KEY = process.env.GEMINI_API_KEY;
++if (!API_KEY) {
++  console.error('GEMINI_API_KEY is not set');
++  process.exit(EXIT_ERROR);
++}
++
++let failed = false;
++for (const job of todo) {
++  const code = await generate(job);
++  if (code === EXIT_QUOTA) {
++    console.log(`::error title=Gemini 한도 초과::${job.dateStr} 카드를 만들지 못했습니다. 다음 실행에서 다시 시도합니다.`);
++    process.exit(EXIT_QUOTA);
++  }
++  if (code !== 0) failed = true;
++}
++process.exit(failed ? EXIT_ERROR : 0);
++
++async function generate({ file, dateStr, outPath, headlines }) {
++if (headlines.length === 0) {
++  console.error('No headlines extracted from', file);
++  return EXIT_ERROR;
++}
++
+ const prompt = `아래 오늘의 뉴스 내용을 소재로, 미국 코믹북 스타일(굵은 검정 잉크 윤곽선, 망점/하프톤 패턴, 강한 원색 대비, 말풍선, 의성어 효과)의 뉴스카드 이미지를 만들어줘. 인스타그램 세로형(1080x1350) 비율로.
+ 
+ 브랜드명은 "헌터의 세상바라보기"로 상단에 로고처럼 넣고, 날짜는 "${dateStr}"로 표기해줘.
+@@ -79,8 +112,8 @@ const res = await fetch(url, {
+ 
+ if (!res.ok) {
+   const errText = await res.text();
+-  console.error('Gemini API error:', res.status, errText);
+-  process.exit(1);
++  console.error('Gemini API error:', res.status, errText.slice(0, 2000));
++  return res.status === 429 ? EXIT_QUOTA : EXIT_ERROR;
+ }
+ 
+ const data = await res.json();
+@@ -89,9 +122,11 @@ const imagePart = parts.find((p) => p.inlineData?.data);
+ 
+ if (!imagePart) {
+   console.error('No image returned. Response:', JSON.stringify(data).slice(0, 500));
+-  process.exit(1);
++  return EXIT_ERROR;
+ }
+ 
+ fs.mkdirSync(path.dirname(outPath), { recursive: true });
+ fs.writeFileSync(outPath, Buffer.from(imagePart.inlineData.data, 'base64'));
+ console.log('Saved', outPath);
++return 0;
++}
+-- 
+2.43.0
+

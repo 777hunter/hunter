@@ -1,0 +1,211 @@
+From 5d3cc854ad7cbe2acf621dc6a70b8ea1f1e89e63 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 14:03:30 +0000
+Subject: [PATCH] =?UTF-8?q?=EC=B9=B4=EC=B9=B4=EC=98=A4:=20=EA=B0=B1?=
+ =?UTF-8?q?=EC=8B=A0=EB=90=9C=20=EB=A6=AC=ED=94=84=EB=A0=88=EC=8B=9C=20?=
+ =?UTF-8?q?=ED=86=A0=ED=81=B0=20=EB=B3=B4=EA=B4=80,=20=EB=A6=AC=ED=94=84?=
+ =?UTF-8?q?=EB=A0=88=EC=8B=9C=20=ED=86=A0=ED=81=B0=EB=A7=8C=EC=9C=BC?=
+ =?UTF-8?q?=EB=A1=9C=20=EC=8B=9C=EC=9E=91,=20=EB=89=B4=EC=8A=A4=20?=
+ =?UTF-8?q?=EC=97=86=EC=9C=BC=EB=A9=B4=20=EC=8B=A4=ED=8C=A8=EB=A1=9C=20?=
+ =?UTF-8?q?=EB=81=9D=EB=82=B4=EA=B8=B0?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- 토큰 갱신 응답에 새 리프레시 토큰이 오면 kakao_token.json 에 저장하고 다음
+  갱신에 씀. 버리면 기존 토큰이 만료되는 두 달 뒤부터 매일 갱신이 실패함.
+  Actions 에서 쓰면 Secret 도 바꾸라고 안내
+- 액세스 토큰 없이 리프레시 토큰만 설정돼 있으면 먼저 발급받고 보냄
+- 보낼 뉴스가 0건이면 빈 카드를 보내지 않고 종료 코드 1
+- tests/test_kakao_tokens.py 3건 (원래 코드에서 2건 실패)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011biGVicmovHx6Eq61AcEuC
+---
+ main.py                    |  5 ++-
+ news_card/kakao.py         | 46 +++++++++++++++++++---------
+ tests/test_kakao_tokens.py | 63 ++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 99 insertions(+), 15 deletions(-)
+ create mode 100644 tests/test_kakao_tokens.py
+
+diff --git a/main.py b/main.py
+index f9e7fdf..c5962d4 100644
+--- a/main.py
++++ b/main.py
+@@ -50,7 +50,10 @@ def main(argv=None) -> int:
+         print(f"   {i}. {it.title}")
+ 
+     if not items:
+-        print("⚠️  뉴스가 없습니다. data/news_<날짜>.json 을 만들거나 NEWS_RSS_URL 을 설정하세요.")
++        # 빈 카드를 보내고 성공(0)으로 끝나면 자동 실행에서 실패를 알아챌 수 없다
++        print("❌ 뉴스가 없습니다. data/news_<날짜>.json 을 만들거나 NEWS_RSS_URL 을 설정하세요.",
++              file=sys.stderr)
++        return 1
+ 
+     # 2) HTML 카드 생성
+     config.OUTPUT_DIR.mkdir(exist_ok=True)
+diff --git a/news_card/kakao.py b/news_card/kakao.py
+index 3187f00..3b56ed0 100644
+--- a/news_card/kakao.py
++++ b/news_card/kakao.py
+@@ -26,26 +26,37 @@ class KakaoError(RuntimeError):
+     pass
+ 
+ 
+-def _load_saved_access_token() -> str:
+-    """이전에 갱신해 저장해 둔 토큰이 있으면 우선 사용."""
++def _load_saved() -> dict:
++    """이전에 갱신해 저장해 둔 토큰들."""
+     if config.TOKEN_FILE.exists():
+         try:
+-            data = json.loads(config.TOKEN_FILE.read_text(encoding="utf-8"))
+-            return data.get("access_token", "")
++            return json.loads(config.TOKEN_FILE.read_text(encoding="utf-8"))
+         except Exception:
+-            return ""
+-    return ""
++            return {}
++    return {}
+ 
+ 
+-def _save_access_token(token: str) -> None:
+-    config.TOKEN_FILE.write_text(
+-        json.dumps({"access_token": token}, ensure_ascii=False), encoding="utf-8"
+-    )
++def _load_saved_access_token() -> str:
++    return _load_saved().get("access_token", "")
++
++
++def _refresh_token() -> str:
++    """카카오가 리프레시 토큰을 새로 내준 적이 있으면 그것(더 최신)을, 아니면 설정값을 쓴다."""
++    return _load_saved().get("refresh_token") or config.KAKAO_REFRESH_TOKEN
++
++
++def _save_tokens(access_token: str, refresh_token: str | None = None) -> None:
++    data = _load_saved()
++    data["access_token"] = access_token
++    if refresh_token:
++        data["refresh_token"] = refresh_token
++    config.TOKEN_FILE.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+ 
+ 
+ def refresh_access_token() -> str:
+     """리프레시 토큰으로 새 액세스 토큰을 발급받는다."""
+-    if not (config.KAKAO_REST_API_KEY and config.KAKAO_REFRESH_TOKEN):
++    refresh = _refresh_token()
++    if not (config.KAKAO_REST_API_KEY and refresh):
+         raise KakaoError("리프레시하려면 KAKAO_REST_API_KEY 와 KAKAO_REFRESH_TOKEN 이 필요합니다.")
+ 
+     resp = requests.post(
+@@ -53,7 +64,7 @@ def refresh_access_token() -> str:
+         data={
+             "grant_type": "refresh_token",
+             "client_id": config.KAKAO_REST_API_KEY,
+-            "refresh_token": config.KAKAO_REFRESH_TOKEN,
++            "refresh_token": refresh,
+         },
+         timeout=15,
+     )
+@@ -62,8 +73,13 @@ def refresh_access_token() -> str:
+         raise KakaoError(f"토큰 갱신 실패: {payload}")
+ 
+     token = payload["access_token"]
+-    _save_access_token(token)
++    # 리프레시 토큰은 만료 1개월 전부터 갱신 응답에 새로 실려 온다. 버리면 두 달 뒤 갱신이 끊긴다.
++    new_refresh = payload.get("refresh_token")
++    _save_tokens(token, new_refresh)
+     print("🔄 액세스 토큰을 새로 발급했습니다.")
++    if new_refresh:
++        print(f"🔑 리프레시 토큰도 새로 받아 {config.TOKEN_FILE.name} 에 저장했습니다. "
++              "GitHub Actions 에서 쓴다면 저장소 Secret KAKAO_REFRESH_TOKEN 도 이 값으로 바꾸세요.")
+     return token
+ 
+ 
+@@ -87,12 +103,14 @@ def _post_template(url: str, access_token: str, template_object: dict, extra: di
+ def _send_with_retry(url: str, template_object: dict, extra: dict | None = None) -> dict:
+     """전송하되, 401(토큰 만료) 이면 리프레시 후 1회 재시도한다."""
+     token = _current_access_token()
++    if not token and _refresh_token():
++        token = refresh_access_token()   # 리프레시 토큰만 있어도 된다고 안내하므로 바로 발급
+     if not token:
+         raise KakaoError("액세스 토큰이 없습니다. .env 의 KAKAO_ACCESS_TOKEN 또는 KAKAO_REFRESH_TOKEN 을 설정하세요.")
+ 
+     resp = _post_template(url, token, template_object, extra)
+ 
+-    if resp.status_code == 401 and config.KAKAO_REFRESH_TOKEN:
++    if resp.status_code == 401 and _refresh_token():
+         # 토큰 만료 → 갱신 후 재시도
+         token = refresh_access_token()
+         resp = _post_template(url, token, template_object, extra)
+diff --git a/tests/test_kakao_tokens.py b/tests/test_kakao_tokens.py
+new file mode 100644
+index 0000000..15df4aa
+--- /dev/null
++++ b/tests/test_kakao_tokens.py
+@@ -0,0 +1,63 @@
++"""카카오 토큰 상태 전이 검사 (네트워크 없이 requests.post 를 바꿔 끼운다).
++
++    python3 -m unittest discover -s tests
++"""
++import json
++import tempfile
++import unittest
++from pathlib import Path
++from unittest import mock
++
++from news_card import config, kakao
++
++
++class Resp:
++    def __init__(self, status, payload):
++        self.status_code, self._p, self.text = status, payload, json.dumps(payload)
++
++    def json(self):
++        return self._p
++
++
++class Tokens(unittest.TestCase):
++    def setUp(self):
++        self.dir = tempfile.mkdtemp()
++        patches = [mock.patch.object(config, "TOKEN_FILE", Path(self.dir) / "kakao_token.json"),
++                   mock.patch.object(config, "KAKAO_REST_API_KEY", "key"),
++                   mock.patch.object(config, "KAKAO_ACCESS_TOKEN", ""),
++                   mock.patch.object(config, "KAKAO_REFRESH_TOKEN", "r-old")]
++        for p in patches:
++            p.start()
++            self.addCleanup(p.stop)
++        self.calls = []
++
++    def post(self, script):
++        def fake(url, headers=None, data=None, timeout=None):
++            self.calls.append((url, dict(data or {}), headers))
++            return script.pop(0)
++        return mock.patch.object(kakao.requests, "post", side_effect=fake)
++
++    def test_refresh_only_config_refreshes_first(self):
++        with self.post([Resp(200, {"access_token": "a1"}), Resp(200, {"result_code": 0})]):
++            kakao.send_to_me({"object_type": "text"})
++        self.assertEqual(self.calls[0][0], kakao.TOKEN_REFRESH_URL)
++        self.assertEqual(self.calls[1][2]["Authorization"], "Bearer a1")
++
++    def test_rotated_refresh_token_is_kept_and_used_next_time(self):
++        with self.post([Resp(200, {"access_token": "a1", "refresh_token": "r-new"}), Resp(200, {})]):
++            kakao.send_to_me({})
++        saved = json.loads(config.TOKEN_FILE.read_text(encoding="utf-8"))
++        self.assertEqual(saved, {"access_token": "a1", "refresh_token": "r-new"})
++        with self.post([Resp(401, {}), Resp(200, {"access_token": "a2"}), Resp(200, {})]):
++            kakao.send_to_me({})
++        self.assertEqual(self.calls[-2][1]["refresh_token"], "r-new")
++        self.assertEqual(json.loads(config.TOKEN_FILE.read_text(encoding="utf-8"))["refresh_token"], "r-new")
++
++    def test_refresh_failure_raises(self):
++        with self.post([Resp(400, {"error": "invalid_grant"})]):
++            with self.assertRaises(kakao.KakaoError):
++                kakao.send_to_me({})
++
++
++if __name__ == "__main__":
++    unittest.main()
+-- 
+2.43.0
+

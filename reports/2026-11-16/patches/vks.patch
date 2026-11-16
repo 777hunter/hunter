@@ -1,0 +1,248 @@
+From e32d1ba9159db341640a646f25f46031bb627dbd Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 14:05:16 +0000
+Subject: [PATCH] =?UTF-8?q?VKS:=20=EB=B6=84=EC=84=9D=20=EC=8B=A4=ED=8C=A8?=
+ =?UTF-8?q?=20=EB=AC=B8=EC=84=9C=20=EC=9C=A0=EC=A7=80,=20=EC=A4=91?=
+ =?UTF-8?q?=EA=B0=84=20=EC=A0=80=EC=9E=A5,=20=ED=83=80=EC=9E=84=EB=9D=BC?=
+ =?UTF-8?q?=EC=9D=B8=20=EA=B8=B0=EC=A4=80=EC=84=A0=EC=9D=84=20=EA=B8=B0?=
+ =?UTF-8?q?=EA=B0=84=20=EC=8B=9C=EC=9E=91=20=EC=A7=81=EC=A0=84=EC=9C=BC?=
+ =?UTF-8?q?=EB=A1=9C?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- vks.py index: 바뀐 문서의 요약이 실패하면 예전 요약을 남기고, 끝에 실패 목록과
+  종료 코드 1. 문서마다 색인을 저장해 중간에 끊겨도 받은 요약을 잃지 않음
+- vks_timeline.py: 첫 구간을 "그 구간 끝 상태"로 요약하던 것을 기간 시작 직전 버전
+  (없으면 기간 중 첫 버전)을 기준선으로 바꿈. 첫 구간 안의 편집이 빠지고 하루짜리
+  기간은 변경이 하나도 안 나오던 문제를 고침. --save 는 구간마다 저장
+- 버전 목록은 빈 페이지가 올 때까지 읽음 (서버가 한 번에 100개보다 적게 줄 때 누락 방지)
+- tests/test_vks_state.py 3건 (원래 코드에서 3건 실패)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011biGVicmovHx6Eq61AcEuC
+---
+ tests/test_vks_state.py | 94 +++++++++++++++++++++++++++++++++++++++++
+ vks.py                  | 19 ++++++++-
+ vks_timeline.py         | 33 +++++++++++----
+ 3 files changed, 136 insertions(+), 10 deletions(-)
+ create mode 100644 tests/test_vks_state.py
+
+diff --git a/tests/test_vks_state.py b/tests/test_vks_state.py
+new file mode 100644
+index 0000000..0eaa12a
+--- /dev/null
++++ b/tests/test_vks_state.py
+@@ -0,0 +1,94 @@
++"""vks.py 색인 갱신과 vks_timeline.py 기준선을 외부 API 없이 검사한다.
++
++    python3 -m unittest discover -s tests
++"""
++import argparse
++import json
++import os
++import sys
++import tempfile
++import types
++import unittest
++from pathlib import Path
++from unittest import mock
++
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
++sys.modules.setdefault("anthropic", types.SimpleNamespace(Anthropic=object))
++import vks            # noqa: E402
++import vks_timeline   # noqa: E402
++
++
++class Index(unittest.TestCase):
++    def setUp(self):
++        self.dir = Path(tempfile.mkdtemp())
++        (self.dir / "a.md").write_text("A 새 내용", encoding="utf-8")
++        (self.dir / "b.md").write_text("B 내용", encoding="utf-8")
++        self.index = self.dir / "index.json"
++        old = {"documents": [{"file": str(self.dir / "a.md"), "title": "A 옛 요약", "hash": "old"}]}
++        self.index.write_text(json.dumps(old), encoding="utf-8")
++        for name, val in (("INDEX_FILE", self.index),):
++            p = mock.patch.object(vks, name, val); p.start(); self.addCleanup(p.stop)
++        p = mock.patch.object(vks, "collect_documents", return_value=[self.dir / "a.md", self.dir / "b.md"])
++        p.start(); self.addCleanup(p.stop)
++        p = mock.patch.object(vks, "make_client", return_value=None); p.start(); self.addCleanup(p.stop)
++
++    def test_failed_changed_doc_keeps_old_entry_and_exits_1(self):
++        def summ(client, model, rel, text):
++            if rel.endswith("a.md"):
++                raise RuntimeError("API 오류")
++            return {"title": "B", "summary": "", "category": "", "keywords": []}
++        with mock.patch.object(vks, "summarize_document", side_effect=summ):
++            with self.assertRaises(SystemExit) as cm:
++                vks.cmd_index("m")
++        self.assertEqual(cm.exception.code, 1)
++        titles = [d["title"] for d in json.loads(self.index.read_text(encoding="utf-8"))["documents"]]
++        self.assertIn("A 옛 요약", titles)
++        self.assertIn("B", titles)
++
++    def test_interrupt_keeps_finished_summaries(self):
++        def summ(client, model, rel, text):
++            if rel.endswith("b.md"):
++                raise KeyboardInterrupt
++            return {"title": "A 새 요약", "summary": "", "category": "", "keywords": []}
++        with mock.patch.object(vks, "summarize_document", side_effect=summ):
++            with self.assertRaises(KeyboardInterrupt):
++                vks.cmd_index("m")
++        titles = [d["title"] for d in json.loads(self.index.read_text(encoding="utf-8"))["documents"]]
++        self.assertEqual(titles, ["A 새 요약"])
++
++
++class Timeline(unittest.TestCase):
++    def versions(self):
++        return [{"number": 1, "when": "2026-06-01T09:00:00.000+09:00", "by": "x", "message": "", "minor": False},
++                {"number": 2, "when": "2026-06-10T09:00:00.000+09:00", "by": "x", "message": "", "minor": False},
++                {"number": 3, "when": "2026-06-10T15:00:00.000+09:00", "by": "x", "message": "", "minor": False}]
++
++    def run_timeline(self, date_from, save):
++        texts = {1: "처음", 2: "중간", 3: "최종"}
++        cf = mock.Mock()
++        cf.page_info.return_value = {"title": "T", "space": "S", "current_version": 3}
++        cf.list_versions.return_value = self.versions()
++        cf.version_body_text.side_effect = lambda pid, n, cur: texts[n]
++        cf.base = "https://vks"
++        diffs = []
++        with mock.patch.object(vks_timeline, "Confluence", return_value=cf), \
++             mock.patch.object(vks_timeline, "resolve_page_id", return_value="1"), \
++             mock.patch.object(vks_timeline, "make_anthropic", return_value=None), \
++             mock.patch.object(vks_timeline, "summarize_baseline", return_value="기준 요약"), \
++             mock.patch.object(vks_timeline, "summarize_change",
++                               side_effect=lambda c, t, l, e, d: diffs.append(d) or "변경 요약"):
++            vks_timeline.run(argparse.Namespace(page="1", date_from=date_from, date_to="2026-06-10",
++                                                bucket="day", list_versions=False, save=save))
++        return diffs
++
++    def test_single_day_range_shows_change_from_previous_version(self):
++        save = os.path.join(tempfile.mkdtemp(), "r.md")
++        diffs = self.run_timeline("2026-06-10", save)
++        self.assertEqual(len(diffs), 1)
++        self.assertIn("-처음", diffs[0])
++        self.assertIn("+최종", diffs[0])
++        self.assertIn("기간 시작 직전", Path(save).read_text(encoding="utf-8"))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/vks.py b/vks.py
+index 3aa2b56..977d76b 100644
+--- a/vks.py
++++ b/vks.py
+@@ -228,8 +228,15 @@ def cmd_index(model: str) -> None:
+     # 이전에 만든 색인을 파일경로 -> 항목으로 매핑 (변경 없는 파일 재사용용)
+     old_by_file = {d["file"]: d for d in old_index["documents"]}
+ 
+-    new_docs = []
+-    for path in files:
++    new_docs, failed = [], []
++    paths = [str(p) for p in files]
++
++    def checkpoint(done: int) -> None:
++        # 중간에 끊겨도 이미 돈 내고 받은 요약을 잃지 않게, 아직 안 본 파일의 옛 항목과 함께 저장
++        rest = [old_by_file[r] for r in paths[done:] if r in old_by_file]
++        save_index({"documents": new_docs + rest})
++
++    for i, path in enumerate(files):
+         rel = str(path)
+         text = read_document(path)
+         if not text.strip():
+@@ -248,6 +255,10 @@ def cmd_index(model: str) -> None:
+             info = summarize_document(client, model, rel, text)
+         except Exception as e:  # 한 파일 실패가 전체를 막지 않도록
+             print(f"    ! 분석 실패({rel}): {e}", file=sys.stderr)
++            failed.append(rel)
++            if cached:  # 예전 요약이라도 남겨 검색에서 사라지지 않게
++                print("      예전 요약을 그대로 둡니다.", file=sys.stderr)
++                new_docs.append(cached)
+             continue
+ 
+         new_docs.append(
+@@ -261,9 +272,13 @@ def cmd_index(model: str) -> None:
+                 "hash": h,
+             }
+         )
++        checkpoint(i + 1)
+ 
+     save_index({"documents": new_docs})
+     print(f"\n완료: {len(new_docs)}개 문서를 '{INDEX_FILE}' 에 색인했습니다.")
++    if failed:
++        print(f"분석 실패 {len(failed)}건: " + ", ".join(failed), file=sys.stderr)
++        sys.exit(1)
+ 
+ 
+ def cmd_search(model: str, query: str) -> None:
+diff --git a/vks_timeline.py b/vks_timeline.py
+index 70fa32e..127463b 100644
+--- a/vks_timeline.py
++++ b/vks_timeline.py
+@@ -116,9 +116,11 @@ class Confluence:
+                         "minor": v.get("minorEdit", False),
+                     }
+                 )
+-            if data.get("size", 0) < limit:
++            # 서버가 한 번에 주는 개수가 limit 보다 작을 수 있으므로 빈 페이지가 올 때까지 읽는다
++            got = len(data.get("results", []))
++            if got == 0:
+                 break
+-            start += limit
++            start += got
+         return versions
+ 
+     def version_body_text(self, page_id, number, current_version):
+@@ -323,7 +325,23 @@ def run(args):
+         "",
+     ]
+ 
+-    prev_text = None
++    # 기준선: 기간 시작 직전 버전. 없으면(기간 중에 만든 페이지) 기간 중 첫 버전
++    before = [v for v in all_versions if v["dt"] < start_dt]
++    if before:
++        base_v, base_label = max(before, key=lambda v: v["dt"]), "기간 시작 직전"
++    else:
++        base_v, base_label = in_range[0], "기간 중 첫 버전"
++    prev_text = cf.version_body_text(page_id, base_v["number"], info["current_version"])
++    block = (f"**[{base_label} 내용 요약 · v{base_v['number']} {base_v['when_str']}]**\n"
++             + summarize_baseline(client, info["title"], prev_text))
++    print("\n" + block)
++    report_lines += [block, ""]
++
++    def save_report():
++        if args.save:
++            with open(args.save, "w", encoding="utf-8") as f:
++                f.write("\n".join(report_lines))
++
+     for key in ordered_keys:
+         edits = buckets[key]
+         label = bucket_label(key, args.bucket)
+@@ -333,9 +351,8 @@ def run(args):
+         print(f"\n## {label}  (편집 {len(edits)}건)")
+         report_lines.append(f"## {label}  (편집 {len(edits)}건)")
+ 
+-        if prev_text is None:
+-            summary = summarize_baseline(client, info["title"], cur_text)
+-            block = "**[시작 시점 내용 요약]**\n" + summary
++        if cur_text == prev_text:
++            block = "본문 변경 없음 (서식·메타데이터만 바뀜)"
+         else:
+             diff = "\n".join(
+                 difflib.unified_diff(
+@@ -352,10 +369,10 @@ def run(args):
+         report_lines.append(block)
+         report_lines.append("")
+         prev_text = cur_text
++        save_report()  # 구간마다 저장: 중간에 API 오류가 나도 앞부분은 남는다
+ 
+     if args.save:
+-        with open(args.save, "w", encoding="utf-8") as f:
+-            f.write("\n".join(report_lines))
++        save_report()
+         print(f"\n리포트를 '{args.save}' 에 저장했습니다.")
+ 
+ 
+-- 
+2.43.0
+

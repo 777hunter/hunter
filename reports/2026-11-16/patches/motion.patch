@@ -1,0 +1,718 @@
+From d305b982b44598e6bd61ffbe7ffb0637bc84fa02 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 14:02:40 +0000
+Subject: [PATCH] =?UTF-8?q?=EB=AA=A8=EC=85=98:=20=EB=8B=A8=EA=B3=84=20?=
+ =?UTF-8?q?=EA=B8=B0=EB=A1=9D=EC=9C=BC=EB=A1=9C=20=EB=8B=A4=EC=8B=9C=20?=
+ =?UTF-8?q?=EB=A7=8C=EB=93=A4=EA=B8=B0=20=ED=8C=90=EB=8B=A8,=20=EC=A2=85?=
+ =?UTF-8?q?=EB=A3=8C=20=EC=BD=94=EB=93=9C=20=EC=A0=95=EB=A6=AC,=20?=
+ =?UTF-8?q?=EB=A7=88=EB=B2=95=EC=82=AC=20=EC=83=81=ED=83=9C=20=EB=B2=84?=
+ =?UTF-8?q?=EA=B7=B8=20=EC=88=98=EC=A0=95?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- run_all.py: 산출물이 있기만 하면 건너뛰던 방식을 단계별 입력 지문
+  (<stem>_stages.json)으로 바꿈. 2차에 --zones 를 붙이면 요소 분할부터 다시 돌고,
+  실패했거나 지금 표준과 맞지 않는 사진·리스크는 문서에 쓰지 않음
+- 종료 코드: 0 완료, 1 실패, 2 재촬영 권장으로 멈춤, 3 일부 단계 실패
+- start.py: "그래도 계속" 선택이 다시 막히던 문제, 단계 실패를 무시하고 끝까지
+  가던 문제, 다운로드 폴더에서 다른 영상의 zones/review 를 집어 오던 문제,
+  존을 다시 그릴 수 없던 문제, 이어하기가 --force 로 전부 다시 하던 문제,
+  설치 실패한 .venv 에 갇히던 문제, 옛 문서 형식까지 결과로 보여 주던 문제
+- 모델 다운로드를 임시 파일 후 이름 바꾸기로 (끊긴 파일이 남지 않게)
+- review_tool/ji_spec: 검수 기록을 만든 표준(단계 번호·이름)과 함께 저장하고,
+  다른 표준이면 반영하지 않고 문서에 알림. 요약 수는 지금 단계만 셈
+- tests/test_run_all.py: 가짜 단계 스크립트로 7건 (원래 코드에서 6건 실패)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011biGVicmovHx6Eq61AcEuC
+---
+ motion/hand_core.py          |   4 +-
+ motion/ji_spec.py            |   9 +++
+ motion/pose_core.py          |   4 +-
+ motion/review_tool.html      |  36 ++++++---
+ motion/run_all.py            | 150 +++++++++++++++++++++++++++--------
+ motion/start.py              |  80 ++++++++++++++-----
+ motion/tests/test_run_all.py | 127 +++++++++++++++++++++++++++++
+ 7 files changed, 343 insertions(+), 67 deletions(-)
+ create mode 100644 motion/tests/test_run_all.py
+
+diff --git a/motion/hand_core.py b/motion/hand_core.py
+index 2d536fb..261fed0 100644
+--- a/motion/hand_core.py
++++ b/motion/hand_core.py
+@@ -45,7 +45,9 @@ def ensure_hand_model(path: str | None = None) -> str:
+         return target
+     os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+     print(f"[model] downloading hand_landmarker -> {target}")
+-    urllib.request.urlretrieve(HAND_MODEL_URL, target)
++    # 임시 파일로 받은 뒤 이름을 바꾼다. 받다 끊기면 깨진 파일이 정상 모델로 남지 않게.
++    urllib.request.urlretrieve(HAND_MODEL_URL, target + ".part")
++    os.replace(target + ".part", target)
+     return target
+ 
+ 
+diff --git a/motion/ji_spec.py b/motion/ji_spec.py
+index 31af64e..91263e7 100644
+--- a/motion/ji_spec.py
++++ b/motion/ji_spec.py
+@@ -114,6 +114,13 @@ def build_spec(std: dict, shots: dict | None, header: dict, out_dir: str,
+                risks: dict | None = None) -> dict:
+     font_path = find_font(header.get("font"))
+     rev_elements = (review or {}).get("elements") or {}
++    stale_review = None
++    rev_steps = (review or {}).get("std_steps")
++    cur_steps = [[row["position"], row.get("name") or ""] for row in std["standard"]]
++    if rev_steps is not None and rev_steps != cur_steps:
++        # 다른 표준(다시 분할했거나 다른 영상)에 대한 검수다. 단계가 어긋나 붙으므로 쓰지 않는다
++        rev_elements = {}
++        stale_review = "검수 기록이 지금 표준과 단계가 달라 반영하지 않았다 — review_tool 로 다시 검수할 것"
+     shot_by_pos = {}
+     for entry in (shots or {}).get("positions", []):
+         if entry["shots"]:
+@@ -121,6 +128,8 @@ def build_spec(std: dict, shots: dict | None, header: dict, out_dir: str,
+     shot_dir = shot_dir or os.path.join(out_dir, "shots")
+ 
+     steps, blanks = [], []
++    if stale_review:
++        blanks.append(stale_review)
+     for row in std["standard"]:
+         pos = row["position"]
+         rev = rev_elements.get(str(pos)) or rev_elements.get(pos) or {}
+diff --git a/motion/pose_core.py b/motion/pose_core.py
+index 982c2b1..b9756ed 100644
+--- a/motion/pose_core.py
++++ b/motion/pose_core.py
+@@ -67,7 +67,9 @@ def ensure_model(path: str | None, variant: str = "full") -> str:
+     os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+     url = MODEL_URLS[variant]
+     print(f"[model] downloading {variant} -> {target}")
+-    urllib.request.urlretrieve(url, target)
++    # 임시 파일로 받은 뒤 이름을 바꾼다. 받다 끊기면 깨진 파일이 정상 모델로 남지 않게.
++    urllib.request.urlretrieve(url, target + ".part")
++    os.replace(target + ".part", target)
+     return target
+ 
+ 
+diff --git a/motion/review_tool.html b/motion/review_tool.html
+index c471fa9..e997124 100644
+--- a/motion/review_tool.html
++++ b/motion/review_tool.html
+@@ -137,18 +137,33 @@ let review={ version:1, video:"", header:{}, elements:{} };
+ 
+ const $ = s => document.querySelector(s);
+ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+-const key = () => "ji-review:" + (stem || "unknown");
++// 검수 기록은 어떤 표준(단계 번호·이름)에 대해 한 것인지 함께 남긴다. 파일 이름이 같은
++// 다른 영상(IMG_0001 등)이나 다시 분할한 표준에 엉뚱한 검수가 붙지 않게 하기 위함.
++// ji_spec.py 도 같은 std_steps 로 맞는지 확인한다.
++const stdSteps = () => std.standard.map(r => [r.position, r.name || ""]);
++function sigHash(str){ let h = 5381; for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; return h.toString(36); }
++const key = () => "ji-review:" + (stem || "unknown") + ":" + sigHash(JSON.stringify(stdSteps()));
++const legacyKey = () => "ji-review:" + (stem || "unknown");
+ 
+ function autosave(){
++  review.std_steps = stdSteps();
+   try { localStorage.setItem(key(), JSON.stringify(review)); } catch (e) {}
+ }
+ function restore(){
+-  try {
+-    const raw = localStorage.getItem(key());
+-    if (!raw) return false;
+-    const doc = JSON.parse(raw);
+-    if (doc && doc.elements){ review = doc; return true; }
+-  } catch (e) {}
++  const sig = JSON.stringify(stdSteps());
++  const positions = JSON.stringify(std.standard.map(r => String(r.position)).sort());
++  for (const k of [key(), legacyKey()]){
++    try {
++      const raw = localStorage.getItem(k);
++      if (!raw) continue;
++      const doc = JSON.parse(raw);
++      if (!doc || !doc.elements) continue;
++      // 예전 형식(서명 없음)은 단계 번호 구성이 똑같을 때만 이어 쓴다
++      const same = doc.std_steps ? JSON.stringify(doc.std_steps) === sig
++                                 : JSON.stringify(Object.keys(doc.elements).sort()) === positions;
++      if (same){ review = doc; return true; }
++    } catch (e) {}
++  }
+   return false;
+ }
+ 
+@@ -383,12 +398,15 @@ function toast(msg){
+ }
+ 
+ $("#save").onclick = () => {
++  review.std_steps = stdSteps();
+   const doc = JSON.parse(JSON.stringify(review));
+   doc.reviewed_at = new Date().toISOString().slice(0,19);
++  // 지금 표준에 있는 단계만 센다 (이전 표준의 남은 기록 제외)
++  const current = std.standard.map(r => review.elements[r.position]).filter(Boolean);
+   doc.summary = {
+     total: std.standard.length,
+-    confirmed: Object.values(review.elements).filter(r => r.status === "confirmed").length,
+-    reasons_filled: Object.values(review.elements).filter(r => (r.reasons||"").trim()).length,
++    confirmed: current.filter(r => r.status === "confirmed").length,
++    reasons_filled: current.filter(r => (r.reasons||"").trim()).length,
+   };
+   const blob = new Blob([JSON.stringify(doc, null, 2)], {type:"application/json"});
+   const a = document.createElement("a");
+diff --git a/motion/run_all.py b/motion/run_all.py
+index 4e13706..731c0f3 100644
+--- a/motion/run_all.py
++++ b/motion/run_all.py
+@@ -10,11 +10,20 @@
+     # review_tool.html 에서 검수한 뒤 3차 (최종 문서)
+     python motion/run_all.py work.mp4 --out-dir out --zones zones.json --review review.json
+ 
+-이미 만들어진 산출물은 건너뛴다. 다시 만들려면 --force.
++단계마다 입력(영상·존·표준 파일의 크기와 수정 시각)과 설정을 <stem>_stages.json 에
++기록해 두고, 그대로면 건너뛰고 바뀌었으면 그 단계와 뒤 단계를 다시 만든다. 그래서 2차에
++--zones 를 붙이면 존을 반영해 요소 분할부터 다시 돈다. 무조건 다시 만들려면 --force.
++
++종료 코드:
++    0  요청한 단계를 모두 마침
++    1  실패 (요소 분할 또는 작업지도서 생성)
++    2  사전 점검이 재촬영을 권해서 멈춤 (--from standard 로 그래도 진행 가능)
++    3  작업지도서는 만들었지만 사진 또는 리스크 단계가 실패함
+ """
+ from __future__ import annotations
+ 
+ import argparse
++import hashlib
+ import json
+ import os
+ import subprocess
+@@ -24,6 +33,18 @@ import time
+ HERE = os.path.dirname(os.path.abspath(__file__))
+ STAGES = ["preflight", "standard", "shots", "risks", "ji"]
+ TUNABLE = ("close_curl", "open_curl", "still_speed", "move_speed")
++EXIT_FAILED, EXIT_RESHOOT, EXIT_PARTIAL = 1, 2, 3
++
++
++def stage_key(script: str, args: list[str]) -> str:
++    """단계 입력 지문: 인자 + 인자로 넘긴 파일의 크기·수정 시각 (doit 의 방식과 같다)."""
++    files = {}
++    for a in args:
++        if os.path.isfile(a):
++            st = os.stat(a)
++            files[a] = [st.st_size, st.st_mtime_ns]
++    blob = json.dumps([script, args, files], sort_keys=True, ensure_ascii=False)
++    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
+ 
+ 
+ def run(script: str, args: list[str], label: str) -> tuple[bool, str]:
+@@ -77,22 +98,64 @@ def main():
+     path = lambda name: os.path.join(out, f"{stem}_{name}")
+     todo = STAGES[STAGES.index(args.from_stage):STAGES.index(args.to_stage) + 1]
+ 
+-    def skip(stage: str, target: str) -> bool:
++    manifest_path = path("stages.json")
++    try:
++        with open(manifest_path, encoding="utf-8") as fh:
++            manifest = json.load(fh)
++    except (OSError, ValueError):
++        manifest = {}
++
++    def record(stage: str, key: str, ok: bool):
++        manifest[stage] = {"key": key, "ok": ok, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
++        with open(manifest_path, "w", encoding="utf-8") as fh:
++            json.dump(manifest, fh, ensure_ascii=False, indent=2)
++
++    def need(stage: str, target: str, key: str) -> bool:
++        """이 단계를 지금 (다시) 만들어야 하는가."""
+         if stage not in todo:
++            return False
++        rec = manifest.get(stage)
++        if args.force:
++            reason = "--force"
++        elif not os.path.exists(target):
++            reason = "산출물 없음"
++        elif not rec:
++            reason = "실행 기록 없음"
++        elif rec.get("key") != key:
++            reason = "입력이나 설정이 바뀜"
++        elif not rec.get("ok"):
++            reason = "지난번 실패"
++        else:
++            print(f"\n── {stage}: 입력이 그대로다 ({os.path.basename(target)}) — 건너뜀")
++            return False
++        if reason != "산출물 없음":
++            print(f"\n── {stage}: 다시 만든다 ({reason})")
++        return True
++
++    def usable(stage: str, target: str, key: str) -> bool:
++        """뒤 단계가 이 산출물을 써도 되는가. 기록이 없는 옛 결과는 예전처럼 쓴다."""
++        if not os.path.exists(target):
++            return False
++        rec = manifest.get(stage)
++        if rec is None:
+             return True
+-        if os.path.exists(target) and not args.force:
+-            print(f"\n── {stage}: 이미 있다 ({os.path.basename(target)}) — 건너뜀")
+-            return True
+-        return False
++        if not rec.get("ok") or rec.get("key") != key:
++            print(f"   {os.path.basename(target)} 은 지금 표준과 맞지 않아 쓰지 않는다")
++            return False
++        return True
+ 
+     common = ["--model", args.model] if args.model else []
+     tuned = {}
+ 
+     # 1. 사전 점검 — 쓸 수 있는 영상인지, 임계값을 얼마로 할지
+-    if not skip("preflight", path("preflight.json")):
+-        ok, _ = run("preflight.py", [video, "--out-dir", out, *common], "사전 점검")
++    pf_args = [video, "--out-dir", out, *common]
++    pf_key = stage_key("preflight.py", pf_args)
++    if need("preflight", path("preflight.json"), pf_key):
++        ok, _ = run("preflight.py", pf_args, "사전 점검")
++        record("preflight", pf_key, ok)
+         if not ok:
+-            raise SystemExit("사전 점검 실패")
++            print("사전 점검 실패")
++            sys.exit(EXIT_FAILED)
+     if os.path.exists(path("preflight.json")):
+         with open(path("preflight.json"), encoding="utf-8") as fh:
+             pf = json.load(fh)
+@@ -102,7 +165,7 @@ def main():
+                 print(f"  ! {r}")
+             print("  그래도 돌려보려면 --from standard 로 다시 실행할 것.")
+             if "standard" in todo and args.from_stage == "preflight":
+-                return
++                sys.exit(EXIT_RESHOOT)
+         if not args.no_auto_tune:
+             tuned = {k: v for k, v in (pf.get("recommend") or {}).items() if k in TUNABLE}
+ 
+@@ -113,38 +176,51 @@ def main():
+         std_args += [f"--{k.replace('_', '-')}", str(v)]
+     if args.zones:
+         std_args += ["--zones", os.path.abspath(args.zones)]
+-    if not skip("standard", path("standard.json")):
++    std_key = stage_key("build_standard.py", std_args)
++    if need("standard", path("standard.json"), std_key):
+         if tuned:
+             print("\n사전 점검 추천 임계값 적용: " +
+                   " ".join(f"{k}={v}" for k, v in tuned.items()))
+         ok, _ = run("build_standard.py", std_args, "작업요소 분할과 사이클 정합")
++        record("standard", std_key, ok)
+         if not ok:
+-            raise SystemExit("요소 분할 실패 — therblig_tag.py 로 쥐기/놓기가 잡히는지 볼 것")
++            print("요소 분할 실패 — therblig_tag.py 로 쥐기/놓기가 잡히는지 볼 것")
++            sys.exit(EXIT_FAILED)
+ 
+-    # 3. 대표 사진
+-    if not skip("shots", path("shots.json")):
+-        shot_args = [video, "--standard", path("standard.json"), "--out-dir", out, *common]
+-        if args.zones:
+-            shot_args += ["--zones", os.path.abspath(args.zones)]
+-        if args.font:
+-            shot_args += ["--font", args.font]
+-        run("capture_shots.py", shot_args, "대표 사진 캡처")
++    # 3. 대표 사진 (표준 파일이 바뀌면 지문이 바뀌어 다시 찍는다)
++    failed = []
++    shot_args = [video, "--standard", path("standard.json"), "--out-dir", out, *common]
++    if args.zones:
++        shot_args += ["--zones", os.path.abspath(args.zones)]
++    if args.font:
++        shot_args += ["--font", args.font]
++    shot_key = stage_key("capture_shots.py", shot_args)
++    if need("shots", path("shots.json"), shot_key):
++        ok, _ = run("capture_shots.py", shot_args, "대표 사진 캡처")
++        record("shots", shot_key, ok)
++        if not ok:
++            failed.append("대표 사진")
+ 
+     # 4. 포카요케 신호
+-    if not skip("risks", path("risks.json")):
+-        risk_args = ["--standard", path("standard.json"), "--out-dir", out]
+-        if args.zones:
+-            risk_args += ["--zones", os.path.abspath(args.zones)]
+-        if args.defects:
+-            risk_args += ["--defects", os.path.abspath(args.defects)]
+-        run("find_risks.py", risk_args, "포카요케 리스크 신호")
+-
+-    # 5. 작업지도서
++    risk_args = ["--standard", path("standard.json"), "--out-dir", out]
++    if args.zones:
++        risk_args += ["--zones", os.path.abspath(args.zones)]
++    if args.defects:
++        risk_args += ["--defects", os.path.abspath(args.defects)]
++    risk_key = stage_key("find_risks.py", risk_args)
++    if need("risks", path("risks.json"), risk_key):
++        ok, _ = run("find_risks.py", risk_args, "포카요케 리스크 신호")
++        record("risks", risk_key, ok)
++        if not ok:
++            failed.append("리스크 신호")
++
++    # 5. 작업지도서 (지금 표준과 맞는 사진·리스크만 쓴다)
+     if "ji" in todo:
+         ji_args = ["--standard", path("standard.json"), "--out-dir", out]
+-        for flag, value in (("--shots", path("shots.json")), ("--risks", path("risks.json"))):
+-            if os.path.exists(value):
+-                ji_args += [flag, value]
++        if usable("shots", path("shots.json"), shot_key):
++            ji_args += ["--shots", path("shots.json")]
++        if usable("risks", path("risks.json"), risk_key):
++            ji_args += ["--risks", path("risks.json")]
+         if args.review:
+             ji_args += ["--review", os.path.abspath(args.review)]
+         for flag, value in (("--job-name", args.job_name), ("--process", args.process),
+@@ -156,10 +232,15 @@ def main():
+         if not ok:
+             print("   문서 생성만 실패했다. motion 폴더에서 `npm install` 후 "
+                   "`--from ji` 로 다시 돌리면 된다.")
++            sys.exit(EXIT_FAILED)
++
++    if failed:
++        print(f"\n[주의] {', '.join(failed)} 단계가 실패해 그 부분 없이 진행했다.")
++    code = EXIT_PARTIAL if failed else 0
+ 
+     # 다음에 할 일
+     if args.no_next:
+-        return
++        sys.exit(code)
+     print("\n── 다음 ───────────────────────────────")
+     if not args.zones:
+         print(f"1. zone_tool.html 을 브라우저에서 열고 영상과 "
+@@ -169,11 +250,12 @@ def main():
+     elif not args.review:
+         print(f"1. review_tool.html 을 열고 결과 폴더({args.out_dir})와 영상을 넣어 검수한다")
+         print(f"2. python motion/run_all.py {args.video} --out-dir {args.out_dir} "
+-              f"--zones zones.json --review review.json --force")
++              f"--zones zones.json --review review.json")
+     else:
+         docx = os.path.join(out, f"{stem}_작업지도서.docx")
+         print(f"작업지도서: {docx}")
+         print("문서 마지막 장의 체크리스트를 확인하고 승인 절차를 밟을 것.")
++    sys.exit(code)
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/motion/start.py b/motion/start.py
+index 6505a61..08644b7 100644
+--- a/motion/start.py
++++ b/motion/start.py
+@@ -52,6 +52,10 @@ def venv_python() -> Path:
+     return VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+ 
+ 
++# 설치가 끝까지 성공했을 때만 남기는 표시. 설치가 중간에 실패한 .venv 로 넘어가지 않게 한다.
++VENV_READY = VENV / ".motion-ready"
++
++
+ def bootstrap():
+     """필요한 것이 없으면 전용 파이썬 환경을 만들고 거기서 다시 시작한다."""
+     try:
+@@ -60,14 +64,14 @@ def bootstrap():
+     except ImportError:
+         pass
+ 
+-    if venv_python().exists() and Path(sys.executable) != venv_python():
++    if VENV_READY.exists() and venv_python().exists() and Path(sys.executable) != venv_python():
+         os.execv(str(venv_python()), [str(venv_python()), __file__, BOOT_FLAG, *sys.argv[1:]])
+ 
+     title("처음 실행 — 필요한 것을 설치한다")
+     say("영상 분석에 쓰는 도구를 내려받는다. 몇 분 걸린다.")
+     if not confirm("계속할까"):
+         sys.exit(0)
+-    if not VENV.exists():
++    if not venv_python().exists():
+         say("\n파이썬 환경 만드는 중...")
+         subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True)
+     say("도구 설치 중... (진행 표시가 없어도 돌아가고 있다)")
+@@ -79,6 +83,7 @@ def bootstrap():
+         say(f'  "{venv_python()}" -m pip install -r "{HERE / "requirements.txt"}"')
+         say((proc.stderr or "")[-800:])
+         sys.exit(1)
++    VENV_READY.write_text("ok\n", encoding="utf-8")
+     say("설치 끝. 다시 시작한다.")
+     os.execv(str(venv_python()), [str(venv_python()), __file__, BOOT_FLAG, *sys.argv[1:]])
+ 
+@@ -113,17 +118,21 @@ def find_videos() -> list[Path]:
+     return out[:12]
+ 
+ 
+-def find_saved(pattern: str, out_dir: Path) -> Path | None:
+-    """브라우저가 내려받은 파일을 찾는다. 대개 다운로드 폴더에 있다."""
++def find_saved(pattern: str, out_dir: Path, since: float) -> Path | None:
++    """브라우저가 내려받은 파일을 찾는다. 대개 다운로드 폴더에 있다.
++
++    도구를 연 뒤(since) 저장된 파일만 본다. 그 전 파일은 다른 영상 것일 수 있다."""
+     cands = []
+     for folder in (out_dir, Path.cwd(), Path.home() / "Downloads", Path.home() / "다운로드"):
+         if not folder.is_dir():
+             continue
+         for f in folder.glob(pattern):
+             try:
+-                cands.append((f.stat().st_mtime, f))
++                mtime = f.stat().st_mtime
+             except OSError:
+-                pass
++                continue
++            if mtime >= since - 2:
++                cands.append((mtime, f))
+     if not cands:
+         return None
+     return max(cands)[1]
+@@ -164,7 +173,29 @@ def run_stage(script: str, args: list[str]) -> tuple[bool, str]:
+     return proc.returncode == 0, text
+ 
+ 
++# run_all.py 종료 코드: 0 끝, 1 실패, 2 재촬영 권장으로 멈춤, 3 일부 단계 실패(문서는 만듦)
++def run_all(args: list[str]) -> int:
++    proc = subprocess.run([sys.executable, str(HERE / "run_all.py"), *args],
++                          cwd=str(HERE), capture_output=True, text=True)
++    noise = ("WARNING: All log", "I0000", "W0000", "INFO: Created TensorFlow", "[hands]",
++             "[pose]", "[shots]")
++    say("\n".join(ln for ln in (proc.stdout or "").splitlines() if not ln.startswith(noise)))
++    if proc.returncode not in (0, 3):
++        say((proc.stderr or "")[-1200:])
++    return proc.returncode
++
++
++def stop_on_failure(code: int, out_dir: Path):
++    if code == 3:
++        say("\n일부 단계가 실패했지만 문서는 만들었다. 위 메시지를 확인할 것.")
++    elif code != 0:
++        say("\n이 단계가 실패했다. 위 메시지를 확인하고 다시 실행하면 이어서 한다.")
++        reveal(out_dir)
++        sys.exit(1)
++
++
+ def main():
++    started = time.time()
+     args = [a for a in sys.argv[1:] if a != BOOT_FLAG]
+     title("작업표준 만들기")
+     say("작업 영상을 넣으면 작업지도서 초안까지 만든다.")
+@@ -204,20 +235,24 @@ def main():
+     if not ok:
+         say("점검에 실패했다. 영상 파일이 정상인지 확인할 것.")
+         sys.exit(1)
++    # 사용자가 "그래도 계속"을 고르면 run_all 이 재촬영 판정으로 다시 멈추지 않게 표준부터 시작
++    start_from = ["--from", "standard"]
+     if "재촬영 권장" in text and not confirm("\n그래도 계속할까", False):
+         reveal(out_dir)
+         sys.exit(0)
+ 
+-    # 3) 요소 분할 (존 없이)
++    # 3) 요소 분할 (존 없이). 존 설정이 이미 있으면 그대로 쓸지 묻는다
+     zones = out_dir / "zones.json"
+-    if not zones.exists():
++    if zones.exists() and not confirm(f"\n이전에 그린 존 설정({zones.name})을 그대로 쓸까"):
++        say("존을 새로 그린다. 기존 파일은 저장하면 덮어쓴다.")
++        redo_zones = True
++    else:
++        redo_zones = not zones.exists()
++    if redo_zones:
+         title("2단계 — 동작을 작업요소로 나눈다")
+         say("영상 길이만큼 시간이 걸린다. 기다릴 것.")
+-        ok, text = run_stage("run_all.py", [str(video), "--out-dir", str(out_dir),
+-                                            "--to", "standard", "--no-next"])
+-        say(text)
+-        if not ok:
+-            sys.exit(1)
++        stop_on_failure(run_all([str(video), "--out-dir", str(out_dir), *start_from,
++                                 "--to", "standard", "--no-next"]), out_dir)
+ 
+         title("3단계 — 화면의 어디가 무엇인지 알려준다")
+         say("브라우저가 열리면 이렇게 한다.")
+@@ -226,9 +261,10 @@ def main():
+         say("  2. '영상' 에서 원본 영상을 고른다 (안 열리면 건너뛰어도 된다)")
+         say("  3. 붉은 점(집은 자리)과 주황 점(놓은 자리) 뭉치를 감싸게 사각형을 그린다")
+         say("  4. 이름과 종류를 넣고 'zones.json 저장'")
++        opened = time.time()
+         open_tool("zone_tool.html")
+         ask("\n저장했으면 엔터")
+-        got = find_saved("zones*.json", out_dir)
++        got = find_saved("zones*.json", out_dir, opened)
+         if got is None:
+             say("zones.json 을 못 찾았다. 파일을 여기로 끌어다 놓을 것.")
+             got = Path(ask("zones.json 경로")).expanduser()
+@@ -244,12 +280,12 @@ def main():
+     if not node_ok:
+         say("\nNode.js 가 없어서 워드 파일 대신 인쇄용 HTML 로 만든다.")
+         say("브라우저에서 열어 인쇄 > PDF 로 저장하거나 워드에 붙여넣으면 된다.")
++    # 입력이 바뀐 단계만 다시 돈다(run_all 이 기록으로 판단). 예전처럼 --force 로 전부 다시 하지 않음
+     cmd = [str(video), "--out-dir", str(out_dir), "--zones", str(zones),
+-           "--job-name", job, "--force", "--no-next"]
++           "--job-name", job, *start_from, "--no-next"]
+     if author:
+         cmd += ["--author", author]
+-    ok, text = run_stage("run_all.py", cmd)
+-    say(text)
++    stop_on_failure(run_all(cmd), out_dir)
+ 
+     # 5) 검수
+     title("5단계 — 검수")
+@@ -261,9 +297,10 @@ def main():
+         say("  2. '영상' 에서 원본 영상을 고른다 — 구간이 반복 재생된다")
+         say("  3. 요소마다 이름·급소·급소의 이유를 고치고 '확인하고 다음'")
+         say("  4. 다 되면 'review.json 저장'")
++        opened = time.time()
+         open_tool("review_tool.html")
+         ask("\n저장했으면 엔터")
+-        got = find_saved("review*.json", out_dir)
++        got = find_saved("review*.json", out_dir, opened)
+         if got is None:
+             typed = ask("review.json 을 못 찾았다. 파일을 끌어다 놓거나, 건너뛰려면 엔터", "")
+             got = Path(typed).expanduser() if typed else None
+@@ -273,19 +310,18 @@ def main():
+                 shutil.copy(got, review)
+             title("6단계 — 최종 문서")
+             cmd = [str(video), "--out-dir", str(out_dir), "--zones", str(zones),
+-                   "--review", str(review), "--job-name", job, "--force",
++                   "--review", str(review), "--job-name", job,
+                    "--from", "ji", "--no-next"]
+             if author:
+                 cmd += ["--author", author]
+-            ok, text = run_stage("run_all.py", cmd)
+-            say(text)
++            stop_on_failure(run_all(cmd), out_dir)
+ 
+     # 6) 마무리
+     title("끝")
+     docx = out_dir / f"{stem}_작업지도서.docx"
+     html = out_dir / f"{stem}_작업지도서.html"
+     for f in (docx, html, out_dir / f"{stem}_shots.png", out_dir / f"{stem}_risks.csv"):
+-        if f.exists():
++        if f.exists() and f.stat().st_mtime >= started - 2:   # 이번에 만든 것만 (옛 형식 파일 제외)
+             say(f"  {f.name}")
+     say(f"\n결과 폴더: {out_dir}")
+     say("문서 마지막 장의 '승인 전 채워야 할 항목' 을 확인하고 승인 절차를 밟을 것.")
+diff --git a/motion/tests/test_run_all.py b/motion/tests/test_run_all.py
+new file mode 100644
+index 0000000..8ebc039
+--- /dev/null
++++ b/motion/tests/test_run_all.py
+@@ -0,0 +1,127 @@
++"""run_all.py 의 단계 건너뛰기·다시 만들기·종료 코드를 검사한다.
++
++실제 영상 분석 대신 가짜 단계 스크립트를 쓰므로 mediapipe 없이 몇 초 만에 돈다.
++    python3 -m unittest discover -s motion/tests
++"""
++import json
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++import time
++import unittest
++
++HERE = os.path.dirname(os.path.abspath(__file__))
++RUN_ALL = os.environ.get("RUN_ALL") or os.path.join(HERE, "..", "run_all.py")
++
++STUB = r'''
++import json, os, sys
++name = os.path.basename(__file__)
++args = sys.argv[1:]
++out = args[args.index("--out-dir") + 1]
++std = args[args.index("--standard") + 1] if "--standard" in args else None
++stem = os.path.splitext(os.path.basename(args[0]))[0] if std is None else os.path.basename(std)[:-len("_standard.json")]
++with open(os.path.join(out, "calls.log"), "a", encoding="utf-8") as fh:
++    fh.write(name + " " + " ".join(args) + "\n")
++fail = os.environ.get("STUB_FAIL", "")
++if fail and fail in name:
++    sys.exit(1)
++target = {"preflight.py": "preflight", "build_standard.py": "standard", "capture_shots.py": "shots",
++          "find_risks.py": "risks", "build_ji.py": "ji"}[name]
++data = {"verdict": os.environ.get("STUB_VERDICT", "진행 가능"), "recommend": {}} if target == "preflight" else {"by": args}
++with open(os.path.join(out, stem + "_" + target + ".json"), "w", encoding="utf-8") as fh:
++    json.dump(data, fh)
++'''
++
++
++class RunAll(unittest.TestCase):
++    def setUp(self):
++        self.dir = tempfile.mkdtemp()
++        self.bin = os.path.join(self.dir, "bin")
++        os.makedirs(self.bin)
++        shutil.copy(RUN_ALL, os.path.join(self.bin, "run_all.py"))
++        for s in ("preflight.py", "build_standard.py", "capture_shots.py", "find_risks.py", "build_ji.py"):
++            with open(os.path.join(self.bin, s), "w", encoding="utf-8") as fh:
++                fh.write(STUB)
++        self.video = os.path.join(self.dir, "work.mp4")
++        with open(self.video, "wb") as fh:
++            fh.write(b"video")
++        self.zones = os.path.join(self.dir, "zones.json")
++        with open(self.zones, "w", encoding="utf-8") as fh:
++            fh.write("{}")
++        self.out = os.path.join(self.dir, "out")
++
++    def tearDown(self):
++        shutil.rmtree(self.dir, ignore_errors=True)
++
++    def run_all(self, *extra, env=None):
++        log = os.path.join(self.out, "calls.log")
++        if os.path.exists(log):
++            os.remove(log)
++        p = subprocess.run([sys.executable, os.path.join(self.bin, "run_all.py"), self.video,
++                            "--out-dir", self.out, "--no-next", *extra],
++                           capture_output=True, text=True, env={**os.environ, **(env or {})})
++        calls = []
++        if os.path.exists(log):
++            with open(log, encoding="utf-8") as fh:
++                calls = fh.read().split()
++        ran = [c for c in calls if c.endswith(".py")]
++        return p, ran
++
++    def test_second_run_with_zones_rebuilds_from_standard(self):
++        p, ran = self.run_all()
++        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
++        self.assertEqual(len(ran), 5)
++        p, ran = self.run_all("--zones", self.zones)
++        self.assertEqual(p.returncode, 0)
++        self.assertEqual(ran, ["build_standard.py", "capture_shots.py", "find_risks.py", "build_ji.py"])
++
++    def test_unchanged_inputs_skip_to_document(self):
++        self.run_all("--zones", self.zones)
++        p, ran = self.run_all("--zones", self.zones)
++        self.assertEqual(ran, ["build_ji.py"])
++
++    def test_edited_zones_file_triggers_rebuild(self):
++        self.run_all("--zones", self.zones)
++        time.sleep(0.01)
++        with open(self.zones, "w", encoding="utf-8") as fh:
++            fh.write('{"changed": 1}')
++        p, ran = self.run_all("--zones", self.zones)
++        self.assertIn("build_standard.py", ran)
++
++    def test_reshoot_verdict_exits_2(self):
++        p, ran = self.run_all(env={"STUB_VERDICT": "재촬영 권장"})
++        self.assertEqual(p.returncode, 2)
++        self.assertEqual(ran, ["preflight.py"])
++        p, ran = self.run_all("--from", "standard", env={"STUB_VERDICT": "재촬영 권장"})
++        self.assertEqual(p.returncode, 0)
++
++    def test_failed_shots_not_used_and_exit_3(self):
++        self.run_all()
++        p, ran = self.run_all("--zones", self.zones, env={"STUB_FAIL": "capture_shots"})
++        self.assertEqual(p.returncode, 3)
++        with open(os.path.join(self.out, "calls.log"), encoding="utf-8") as fh:
++            ji = fh.read().splitlines()[-1]
++        self.assertTrue(ji.startswith("build_ji.py"))
++        self.assertNotIn("--shots", ji)          # 옛 사진을 새 표준에 붙이지 않음
++        p, ran = self.run_all("--zones", self.zones)
++        self.assertIn("capture_shots.py", ran)    # 지난번 실패는 다시 시도
++
++    def test_document_failure_exits_1(self):
++        p, _ = self.run_all(env={"STUB_FAIL": "build_ji"})
++        self.assertEqual(p.returncode, 1)
++
++    def test_legacy_outputs_without_record_are_rebuilt_once(self):
++        os.makedirs(self.out)
++        for t in ("preflight", "standard", "shots", "risks"):
++            with open(os.path.join(self.out, f"work_{t}.json"), "w", encoding="utf-8") as fh:
++                json.dump({"verdict": "진행 가능"} if t == "preflight" else {}, fh)
++        p, ran = self.run_all()
++        self.assertEqual(len(ran), 5)
++        p, ran = self.run_all()
++        self.assertEqual(ran, ["build_ji.py"])
++
++
++if __name__ == "__main__":
++    unittest.main()
+-- 
+2.43.0
+

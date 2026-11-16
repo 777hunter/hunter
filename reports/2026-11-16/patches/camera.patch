@@ -1,0 +1,125 @@
+From 9576879b526dec03c851d8a77c5afdacab883b88 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 14:07:24 +0000
+Subject: [PATCH] =?UTF-8?q?=EB=AC=B4=EC=9D=8C=EC=B9=B4=EB=A9=94=EB=9D=BC:?=
+ =?UTF-8?q?=20=EB=B9=A0=EB=A5=B8=20=EC=A0=84=ED=99=98=C2=B7=ED=83=AD=20?=
+ =?UTF-8?q?=EC=9D=B4=EB=8F=99=20=EC=A4=91=20=EC=B9=B4=EB=A9=94=EB=9D=BC=20?=
+ =?UTF-8?q?=EC=8A=A4=ED=8A=B8=EB=A6=BC=EC=9D=B4=20=EC=83=88=EB=8D=98=20?=
+ =?UTF-8?q?=EB=AC=B8=EC=A0=9C=20=EC=88=98=EC=A0=95?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- 시작 요청마다 번호를 매겨, 권한 창이 떠 있는 사이 전환이나 탭 이동이 있었으면
+  늦게 도착한 스트림을 바로 끄도록 함. 전에는 앞선 스트림이 꺼지지 않아 카메라가
+  계속 켜져 있었음
+- 탭 복귀 때 다시 켤지를 화면 표시(status 의 display)가 아니라 cameraWanted 로 판단
+- tests/stream_race.cjs: 가짜 getUserMedia 로 빠른 전환 검사 (원래 코드는 스트림 2개)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011biGVicmovHx6Eq61AcEuC
+---
+ index.html            | 19 ++++++++++++++++---
+ tests/stream_race.cjs | 32 ++++++++++++++++++++++++++++++++
+ 2 files changed, 48 insertions(+), 3 deletions(-)
+ create mode 100644 tests/stream_race.cjs
+
+diff --git a/index.html b/index.html
+index 5f7ad7a..7111bed 100644
+--- a/index.html
++++ b/index.html
+@@ -250,16 +250,22 @@
+ 
+     let stream = null;
+     let facing = 'environment';   // 'user' | 'environment'
++    // 카메라를 켜 두려는 상태인지(화면 표시와 별개). 탭 복귀 때 다시 켤지 이것으로 정한다
++    let cameraWanted = false;
++    // 시작 요청 번호. 권한 창이 떠 있는 사이 전환·탭 이동이 일어나면 늦게 도착한 스트림을 버린다
++    let startToken = 0;
+     let timerSec = 0;             // 0 / 3 / 5 / 10
+     let photos = [];              // { url, blob, name }
+     const TIMER_STEPS = [0, 3, 5, 10];
+ 
+     // --- 카메라 시작 ---
+     async function startCamera() {
++      const token = ++startToken;
++      cameraWanted = true;
+       stopCamera();
+       statusText.textContent = '카메라를 여는 중...';
+       try {
+-        stream = await navigator.mediaDevices.getUserMedia({
++        const s = await navigator.mediaDevices.getUserMedia({
+           video: {
+             facingMode: facing,
+             width:  { ideal: 1920 },
+@@ -267,11 +273,18 @@
+           },
+           audio: false               // 오디오 없음 → 완전 무음
+         });
++        if (token !== startToken || document.hidden) {   // 더 새 요청이 있었거나 탭을 떠남
++          s.getTracks().forEach(t => t.stop());
++          return;
++        }
++        stream = s;
+         video.srcObject = stream;
+         video.classList.toggle('mirror', facing === 'user');
+         status.style.display = 'none';
+         controls.style.visibility = 'visible';
+       } catch (err) {
++        if (token !== startToken) return;
++        cameraWanted = false;
+         status.style.display = 'block';
+         controls.style.visibility = 'hidden';
+         statusText.textContent = '카메라를 사용할 수 없습니다.\n권한을 허용했는지 확인해 주세요.\n(' + err.name + ')';
+@@ -385,8 +398,8 @@
+ 
+     // 탭 전환 시 카메라 정리 / 복귀
+     document.addEventListener('visibilitychange', () => {
+-      if (document.hidden) stopCamera();
+-      else if (status.style.display === 'none') startCamera();
++      if (document.hidden) { startToken++; stopCamera(); }
++      else if (cameraWanted) startCamera();
+     });
+ 
+     // --- PWA: 설치 & 서비스워커 ---
+diff --git a/tests/stream_race.cjs b/tests/stream_race.cjs
+new file mode 100644
+index 0000000..a29c6f7
+--- /dev/null
++++ b/tests/stream_race.cjs
+@@ -0,0 +1,32 @@
++// 실행: node tests/stream_race.cjs index.html   (Playwright 필요)
++// 무음카메라: 빠른 전환·탭 이동 중 스트림이 새지 않는지 (getUserMedia 를 지연 응답 가짜로 바꿔 검사)
++const { chromium } = require('playwright');
++const fs = require('fs');
++(async () => {
++  const html = fs.readFileSync(process.argv[2], 'utf8');
++  const b = await chromium.launch(); const p = await b.newPage();
++  await p.addInitScript(() => {
++    window.__live = 0; window.__made = 0;
++    const delays = [50, 300, 50, 50];
++    const gum = () => new Promise(res => {
++      const d = delays[window.__made++] ?? 50;
++      setTimeout(() => {
++        window.__live++;
++        const track = { stop() { if (!this.s) { this.s = 1; window.__live--; } }, getSettings: () => ({ width: 640, height: 480 }) };
++        res({ getTracks: () => [track], getVideoTracks: () => [track] });
++      }, d);
++    });
++    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: gum } });
++    Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', { set() {}, get() { return null; } });
++  });
++  await p.route('**/*', r => r.request().url().startsWith('http://cam.test/') ? r.fulfill({ contentType: 'text/html', body: html }) : r.abort());
++  await p.goto('http://cam.test/');
++  await p.click('#startBtn');                        // 1번 요청
++  await p.waitForTimeout(150);
++  await p.evaluate(() => { document.getElementById('switch').click();   // 2번 (느림)
++                           document.getElementById('switch').click(); }); // 3번 (빠름) — 2번이 늦게 도착
++  await p.waitForTimeout(600);
++  const live = await p.evaluate(() => window.__live);
++  console.log('rapid switch: live streams =', live, live === 1 ? 'ok' : 'LEAK');
++  await b.close(); process.exit(live === 1 ? 0 : 1);
++})();
+-- 
+2.43.0
+

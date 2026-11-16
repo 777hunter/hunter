@@ -1,0 +1,60 @@
+From 3c3257331fb6b5cfa12cfaa43624ede5246e3dd9 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 14:07:33 +0000
+Subject: [PATCH] =?UTF-8?q?=ED=99=88=20=ED=99=94=EB=A9=B4=20=EC=A0=95?=
+ =?UTF-8?q?=EB=A6=AC=EA=B8=B0:=20"=EC=98=88=EC=8B=9C=EB=A1=9C=20=EB=90=98?=
+ =?UTF-8?q?=EB=8F=8C=EB=A6=AC=EA=B8=B0"=EB=8F=84=20=ED=99=95=EC=9D=B8?=
+ =?UTF-8?q?=EC=9D=84=20=EA=B1=B0=EC=B9=98=EA=B2=8C?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+내 앱 목록을 확인 없이 예시로 덮어쓰던 문제. "전부 지우기"와 같은 확인 줄을 쓴다.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011biGVicmovHx6Eq61AcEuC
+---
+ app-organizer/index.html | 20 +++++++++++++++-----
+ 1 file changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/app-organizer/index.html b/app-organizer/index.html
+index dcf36f8..88b7e73 100644
+--- a/app-organizer/index.html
++++ b/app-organizer/index.html
+@@ -153,7 +153,7 @@ ul.apps li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px
+         <button type="button" class="ghost" id="sample">예시로 되돌리기</button>
+         <button type="button" class="ghost" id="clear">전부 지우기</button>
+       </div>
+-      <p class="note" id="clearConfirm" hidden>정말 전부 지울까요? <button type="button" id="clearYes">지우기</button> <button type="button" id="clearNo" class="ghost">취소</button></p>
++      <p class="note" id="clearConfirm" hidden><span id="confirmText">정말 전부 지울까요?</span> <button type="button" id="clearYes">지우기</button> <button type="button" id="clearNo" class="ghost">취소</button></p>
+     </section>
+ 
+     <aside class="preview">
+@@ -374,10 +374,20 @@ $("list").addEventListener("change", e => {
+ });
+ $("pager").addEventListener("click", e => { const b = e.target.closest("[data-page]"); if (b) { page = +b.dataset.page; render(); } });
+ $("grid").addEventListener("click", () => { const n = $("pager").children.length; if (n > 1) { page = (page + 1) % n; render(); } });
+-$("sample").addEventListener("click", () => { apps = sample(); filter = "all"; render(); toast("예시 목록으로 되돌렸습니다."); });
+-$("clear").addEventListener("click", () => { $("clearConfirm").hidden = false; });
+-$("clearNo").addEventListener("click", () => { $("clearConfirm").hidden = true; });
+-$("clearYes").addEventListener("click", () => { apps = []; $("clearConfirm").hidden = true; render(); toast("목록을 비웠습니다. 위에서 앱을 추가하세요."); });
++// 내 목록을 통째로 바꾸는 두 동작(예시로 되돌리기, 전부 지우기)은 같은 확인 줄을 거친다
++let pendingReset = null;
++function askReset(text, yesLabel, action) {
++  pendingReset = action;
++  $("confirmText").textContent = text;
++  $("clearYes").textContent = yesLabel;
++  $("clearConfirm").hidden = false;
++}
++$("sample").addEventListener("click", () => askReset(`지금 목록 ${apps.length}개를 버리고 예시로 바꿀까요?`, "예시로 바꾸기",
++  () => { apps = sample(); filter = "all"; render(); toast("예시 목록으로 되돌렸습니다."); }));
++$("clear").addEventListener("click", () => askReset("정말 전부 지울까요?", "지우기",
++  () => { apps = []; render(); toast("목록을 비웠습니다. 위에서 앱을 추가하세요."); }));
++$("clearNo").addEventListener("click", () => { pendingReset = null; $("clearConfirm").hidden = true; });
++$("clearYes").addEventListener("click", () => { const act = pendingReset; pendingReset = null; $("clearConfirm").hidden = true; if (act) act(); });
+ $("copy").addEventListener("click", () => {
+   const box = $("copybox");
+   const fallback = () => { box.focus(); box.select(); toast("텍스트를 선택했습니다. 길게 눌러 복사하세요."); };
+-- 
+2.43.0
+
