@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 
-const HUB = join(dirname(fileURLToPath(import.meta.url)), '..', 'hub.html');
+const HUB = process.env.HUB_FILE || join(dirname(fileURLToPath(import.meta.url)), '..', 'hub.html');
 const URL = 'http://hub.test/';
 const STATE_RE = /(<script id="state" type="application\/json">)([\s\S]*?)(<\/script>)/;
 
@@ -247,7 +247,7 @@ const only = process.argv[2];
 for (const [name, fn] of Object.entries(tests)) {
   if (only && !name.includes(only)) continue;
   try { await fn(browser); console.log('ok   ' + name); }
-  catch (e) { failed++; console.log('FAIL ' + name + '\n     ' + String(e.message).split('\n')[0]); }
+  catch (e) { failed++; console.log('FAIL ' + name + '\n     ' + String(e.message).split('\n')[0]); if (process.env.FAIL_FAST) break; }
 }
 await browser.close();
 process.exit(failed ? 1 : 0);

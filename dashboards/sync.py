@@ -120,7 +120,34 @@ def norm_id(entry: dict) -> str:
     return raw.lower()
 
 
-def merge(state: dict, incoming: list) -> list:
+# 이미 등록된 항목에서 동기화가 바꿔도 되는 필드와 그 조건. 여기 없는 필드
+# (설명·분류·숨김·고정·태그·상태)는 사람이 정하는 값이라 절대 바꾸지 않는다.
+UPDATE_RULES = (
+    ("updated", "최종 수정일", lambda item, new: True),
+    ("title", "제목", lambda item, new: not item.get("titleLocked")),         # 사람이 고친 제목은 유지
+    ("icon", "아이콘", lambda item, new: item.get("icon", DEFAULT_ICON) == DEFAULT_ICON),  # 기본 아이콘일 때만
+    ("url", "주소", lambda item, new: True),
+)
+
+
+def new_item(aid: str, entry: dict) -> dict:
+    return {
+        "id": aid,
+        "url": entry.get("url", ""),
+        "title": entry.get("title", "제목 없음"),
+        "icon": entry.get("icon") or DEFAULT_ICON,
+        "cat": "unsorted",
+        "desc": "",
+        "tags": [],
+        "updated": entry.get("updated", today()),
+        "added": today(),
+        "hidden": False,
+        "pinned": False,
+        "status": "new",
+    }
+
+
+def merge(state: dict, incoming: list) -> dict:
     items = state.setdefault("items", [])
     tombs = {t.lower() for t in state.setdefault("tombstones", [])}
     self_id = (state.get("selfId") or "").lower()
@@ -139,44 +166,18 @@ def merge(state: dict, incoming: list) -> list:
 
         item = by_id.get(aid)
         if item is None:
-            items.append(
-                {
-                    "id": aid,
-                    "url": entry.get("url", ""),
-                    "title": entry.get("title", "제목 없음"),
-                    "icon": entry.get("icon") or DEFAULT_ICON,
-                    "cat": "unsorted",
-                    "desc": "",
-                    "tags": [],
-                    "updated": entry.get("updated", today()),
-                    "added": today(),
-                    "hidden": False,
-                    "pinned": False,
-                    "status": "new",
-                }
-            )
+            items.append(new_item(aid, entry))
             by_id[aid] = items[-1]
             log.append("신규 편입: %s" % entry.get("title", aid))
             result["added"].append(aid)
             continue
 
         changed = []
-        upd = entry.get("updated")
-        if upd and upd != item.get("updated"):
-            item["updated"] = upd
-            changed.append("최종 수정일")
-        title = entry.get("title")
-        if title and not item.get("titleLocked") and title != item.get("title"):
-            item["title"] = title
-            changed.append("제목")
-        icon = entry.get("icon")
-        if icon and item.get("icon", DEFAULT_ICON) == DEFAULT_ICON and icon != DEFAULT_ICON:
-            item["icon"] = icon
-            changed.append("아이콘")
-        url = entry.get("url")
-        if url and url != item.get("url"):
-            item["url"] = url
-            changed.append("주소")
+        for key, label, allowed in UPDATE_RULES:
+            new = entry.get(key)
+            if new and new != item.get(key) and allowed(item, new):
+                item[key] = new
+                changed.append(label)
         if changed:
             log.append("갱신(%s): %s" % (", ".join(changed), item["title"]))
             result["updated"].append(aid)
@@ -184,6 +185,56 @@ def merge(state: dict, incoming: list) -> list:
     state["syncedAt"] = today()
     result["log"] = log
     return result
+
+
+def sync(html: str, incoming: list, repo_html: str | None = None, self_id: str | None = None,
+         repo_label: str = "저장소") -> tuple:
+    """파일을 읽고 쓰지 않는 핵심 계산. (결과 HTML, 레지스트리, 요약) 을 돌려준다.
+
+    html      : 발행본. 데이터(레지스트리)의 기준
+    repo_html : 저장소의 hub.html. 있으면 화면 코드의 기준
+    """
+    state = read_state(html)
+    if self_id:
+        state["selfId"] = self_id.lower()
+    result = merge(state, incoming)
+    log = result["log"]
+
+    shell, code_updated = html, False
+    if repo_html is not None and STATE_RE.search(repo_html) and all(app_code(repo_html)):
+        if app_code(repo_html) != app_code(html):
+            code_updated = True
+            log.append("앱 코드 갱신: 발행본의 화면 코드가 %s와 달라 %s 코드로 맞춤" % (repo_label, repo_label))
+        shell = repo_html
+
+    summary = {
+        "changed": bool(result["added"] or result["updated"] or code_updated),
+        "added": result["added"],
+        "updated": result["updated"],
+        "ignored": result["ignored"],
+        "code_updated": code_updated,
+        "problems": check(state),
+        "log": log,
+        "items": len(state["items"]),
+        "tombstones": len(state["tombstones"]),
+    }
+    return write_state(shell, state), state, summary
+
+
+def report(summary: dict) -> str:
+    """사람이 읽는 출력. "변경 없음" 문구는 주간 루틴이 그대로 읽으므로 바꾸지 않는다.
+    제외됨(무시) 줄만 있으면 바뀐 것이 없으므로 역시 "변경 없음"."""
+    return "\n".join(summary["log"]) if summary["changed"] else "변경 없음"
+
+
+def read(path: str) -> str:
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def write(path: str, text: str) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
 
 
 def main() -> None:
@@ -199,11 +250,10 @@ def main() -> None:
                     help="--html 의 레지스트리 불변식만 검사. 문제가 있으면 종료 코드 1")
     args = ap.parse_args()
 
-    html = open(args.html, encoding="utf-8").read()
-    state = read_state(html)
+    html = read(args.html)
 
     if args.check:
-        problems = check(state)
+        problems = check(read_state(html))
         if args.json:
             print(json.dumps({"ok": not problems, "problems": problems}, ensure_ascii=False))
         else:
@@ -212,59 +262,28 @@ def main() -> None:
 
     if not args.list:
         ap.error("--list 가 필요합니다 (--check 만 쓸 때는 빼도 됩니다)")
-    incoming = json.load(open(args.list, encoding="utf-8"))
+    incoming = json.loads(read(args.list))
     if isinstance(incoming, dict):
         incoming = incoming.get("items", [])
 
-    if args.self_id:
-        state["selfId"] = args.self_id.lower()
-
-    result = merge(state, incoming)
-    log = result["log"]
-
     # 앱 코드는 저장소(--out) 쪽이 기준. 발행본과 다르면 저장소 코드에 데이터를 얹는다.
     out = args.out or args.html
-    shell = html
-    code_updated = False
-    if out != args.html and os.path.exists(out):
-        repo_html = open(out, encoding="utf-8").read()
-        if STATE_RE.search(repo_html) and all(app_code(repo_html)):
-            if app_code(repo_html) != app_code(html):
-                code_updated = True
-                log.append("앱 코드 갱신: 발행본의 화면 코드가 저장소(%s)와 달라 저장소 코드로 맞춤" % out)
-            shell = repo_html
+    repo_html = read(out) if out != args.html and os.path.exists(out) else None
+    out_html, state, summary = sync(html, incoming, repo_html, args.self_id, "저장소(%s)" % out)
+    summary["out"] = None if args.dry_run else out
 
-    problems = check(state)
-    for p in problems:
+    for p in summary["problems"]:
         print("경고: " + p, file=sys.stderr)
 
-    changed = bool(result["added"] or result["updated"] or code_updated)
-    summary = {
-        "changed": changed,
-        "added": result["added"],
-        "updated": result["updated"],
-        "ignored": result["ignored"],
-        "code_updated": code_updated,
-        "problems": problems,
-        "log": log,
-        "out": None if args.dry_run else out,
-        "items": len(state["items"]),
-        "tombstones": len(state["tombstones"]),
-    }
-
     if not args.dry_run:
-        open(out, "w", encoding="utf-8").write(write_state(shell, state))
+        write(out, out_html)
         if args.registry:
-            with open(args.registry, "w", encoding="utf-8") as fh:
-                json.dump(state, fh, ensure_ascii=False, indent=2)
-                fh.write("\n")
+            write(args.registry, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
 
     if args.json:
         print(json.dumps(summary, ensure_ascii=False))
         return
-    # "변경 없음" 문구는 주간 루틴이 그대로 읽으므로 바꾸지 않는다.
-    # 제외됨(무시) 줄만 있으면 바뀐 것이 없으므로 역시 "변경 없음".
-    print("\n".join(log) if changed else "변경 없음")
+    print(report(summary))
     if not args.dry_run:
         print("→ %s (등록 %d건, 제외 %d건)" % (out, len(state["items"]), len(state["tombstones"])))
 

@@ -1,0 +1,13 @@
+{
+  "_why": {
+    "ensure_ascii": "JSON 을 읽는 쪽에는 한글이 그대로든 \\uXXXX 든 같은 값이다 (기계가 읽는 출력·HTML 안 상태 블록)",
+    "isinstance default": "키가 없을 때 기본값이 False 든 True 든 둘 다 bool 이라 결과가 같다"
+  },
+  "sync": [
+    "sync.py:108 [bool] if not isinstance(it.get(key, False), bool):",
+    "sync.py:258 [bool] print(json.dumps({\"ok\": not problems, \"problems\": problems}, ensure_ascii=False))",
+    "sync.py:284 [bool] print(json.dumps(summary, ensure_ascii=False))",
+    "sync.py:72 [bool] blob = json.dumps(state, ensure_ascii=False, separators=(\",\", \":\")).replace("
+  ],
+  "hub": []
+}
