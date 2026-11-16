@@ -1,7 +1,12 @@
 {
   "_why": {
     "ensure_ascii": "JSON 을 읽는 쪽에는 한글이 그대로든 \\uXXXX 든 같은 값이다 (기계가 읽는 출력·HTML 안 상태 블록)",
-    "isinstance default": "키가 없을 때 기본값이 False 든 True 든 둘 다 bool 이라 결과가 같다"
+    "isinstance default": "키가 없을 때 기본값이 False 든 True 든 둘 다 bool 이라 결과가 같다",
+    "hub.html go() return": "허용되지 않은 전이에서 true 를 돌려줘도, 그 경우 저장 버튼이 이미 잠겨 있어 화면에서 도달할 수 없다",
+    "hub.html adding 초기값/보기 전용 전환": "관리자 버튼을 누를 때 adding 을 false 로 되돌리고, 보기 전용에서는 관리자 패널 자체가 사라진다",
+    "hub.html 정렬 'updated' option selected": "다른 정렬이 골라져 있으면 뒤에 오는 option 의 selected 가 이기고, updated 일 때는 첫 option 이라 기본값과 같다",
+    "hub.html bmfile/imptoggle/drop 조건": "편집할 수 없을 때 파일 입력은 disabled, 체크박스는 가져오기 창이 있을 때만 존재, 행 안의 다른 버튼은 앞 분기에서 먼저 처리된다",
+    "hub.html beforeunload preventDefault": "returnValue = '' 를 함께 설정해 preventDefault 없이도 브라우저가 떠나기 확인을 띄운다"
   },
   "sync": [
     "sync.py:108 [bool] if not isinstance(it.get(key, False), bool):",
@@ -9,5 +14,14 @@
     "sync.py:284 [bool] print(json.dumps(summary, ensure_ascii=False))",
     "sync.py:72 [bool] blob = json.dumps(state, ensure_ascii=False, separators=(\",\", \":\")).replace("
   ],
-  "hub": []
+  "hub": [
+    "hub.html:438 [bool] if (!to) return false;  →  if (!to) return true;",
+    "hub.html:446 [bool] edit: null, editDraft: {}, adding: false, addDraft: {}, imp: null };  →  edit: null, editDraft: {}, adding: true, addDraft: {}, imp: null };",
+    "hub.html:742 [eq] '<option value=\"updated\"' + (ui.sort === 'updated' ? ' selected' : '')  →  '<option value=\"updated\"' + (ui.sort !== 'updated' ? ' selected' : '')",
+    "hub.html:818 [bool] pub = null; ui.admin = false; ui.edit = null; ui.adding = false; ui.im  →  pub = null; ui.admin = false; ui.edit = null; ui.adding = true; ui.imp",
+    "hub.html:846 [andor] if (file && editable()) loadBookmarks(file);  →  if (file || editable()) loadBookmarks(file);",
+    "hub.html:851 [andor] if (ui.imp && ui.imp.rows[idx]) { ui.imp.rows[idx].sel = t.checked; im  →  if (ui.imp || ui.imp.rows[idx]) { ui.imp.rows[idx].sel = t.checked; im",
+    "hub.html:908 [andor] else if (act === 'drop' && it) {  →  else if (act === 'drop' || it) {",
+    "hub.html:924 [call] e.preventDefault();  →  /* removed */"
+  ]
 }

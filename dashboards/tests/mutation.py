@@ -118,9 +118,15 @@ def py_mutants(src):
 def run_hub(mutated_html):
     with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as fh:
         fh.write(mutated_html)
+    env = {**os.environ, "HUB_FILE": fh.name, "FAIL_FAST": "1"}
     try:
+        # 규칙 단위 테스트(1초 미만)로 먼저 잡고, 통과한 변이만 브라우저 테스트로 넘긴다
+        p = subprocess.run(["node", "--test", os.path.join(HERE, "hub_core.test.mjs")],
+                           capture_output=True, text=True, env=env, timeout=60)
+        if p.returncode != 0:
+            return True
         p = subprocess.run(["node", os.path.join(HERE, "hub_states.mjs")], capture_output=True, text=True,
-                           env={**os.environ, "HUB_FILE": fh.name, "FAIL_FAST": "1"}, timeout=300)
+                           env=env, timeout=300)
         return p.returncode != 0
     except subprocess.TimeoutExpired:
         return True

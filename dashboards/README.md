@@ -115,9 +115,34 @@ python3 dashboards/sync.py --check --html dashboards/hub.html   # 불변식 위�
 ### 테스트
 
 ```bash
-python3 -m unittest discover -s dashboards/tests   # sync.py 규칙
-node dashboards/tests/hub_states.mjs               # 화면의 저장·초안·편집 상태 (Playwright)
+python3 -m unittest discover -s dashboards/tests   # sync.py 규칙 (26건, 1초 미만)
+node --test dashboards/tests/hub_core.test.mjs     # 화면 규칙 HubCore (16건, 1초 미만)
+node dashboards/tests/hub_states.mjs               # 화면 동작 (Playwright 25건, 약 15초)
 ```
+
+화면 코드는 두 부분입니다. `<script id="app">` 맨 앞의 **HubCore** 는 DOM 없이 도는 규칙
+(상태 정규화, 저장 전이표, 초안 재적용, 필터·정렬, 즐겨찾기 분류, 추가·편집·제거)이고, 그 아래는
+HubCore 를 불러 화면을 그리는 부분입니다. 규칙을 고칠 때는 HubCore 와 `hub_core.test.mjs` 만
+보면 됩니다. 페이지에서는 `window.HubCore` 로도 보입니다.
+
+### 버그 유입 확률 재기 (변이 테스트)
+
+코드를 한 군데씩 일부러 틀리게 만들어 테스트가 잡는지 봅니다. 살아남은 비율이 "리팩토링 중
+생긴 버그가 테스트를 빠져나갈 확률"의 근사치입니다. 목표는 15% 이하입니다.
+
+```bash
+python3 dashboards/tests/mutation.py sync          # 수 초
+python3 dashboards/tests/mutation.py hub -j 4      # 약 10분
+```
+
+| 대상 | 처음 | 설계·테스트 개선 후 |
+| --- | --- | --- |
+| `sync.py` | 36.9% | 0% (변이 112개, 동등 4개 제외) |
+| 화면 코드 | 48.2% | 3.0% → 0% (변이 271개, 동등 8개 제외) |
+
+화면에서 도달할 수 없거나 결과가 같은 변이(동등 변이)는 `tests/mutation_equivalent.json` 에
+이유와 함께 적어 두고 분모에서 뺍니다. 코드를 고치면 줄 번호가 바뀌므로, 생존 변이가 새로
+나오면 먼저 진짜 빈틈인지 보고 테스트를 더하거나 동등 목록을 고칩니다.
 
 ### 정기 실행
 
