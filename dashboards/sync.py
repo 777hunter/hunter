@@ -204,7 +204,7 @@ def sync(html: str, incoming: list, repo_html: str | None = None, self_id: str |
     if repo_html is not None and STATE_RE.search(repo_html) and all(app_code(repo_html)):
         if app_code(repo_html) != app_code(html):
             code_updated = True
-            log.append("앱 코드 갱신: 발행본의 화면 코드가 %s와 달라 %s 코드로 맞춤" % (repo_label, repo_label))
+            log.append("앱 코드 갱신: 발행본의 화면 코드를 %s 코드로 맞춤" % repo_label)
         shell = repo_html
 
     summary = {
